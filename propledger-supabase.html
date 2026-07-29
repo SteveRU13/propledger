@@ -1190,6 +1190,20 @@ function bootLock(){
 
 <script>
 'use strict';
+// ── Config screen show/hide (inline style must be cleared, or class rules lose) ──
+function hideConfigScreen(){
+  const el=document.getElementById('config-screen');
+  if(!el)return;
+  el.classList.add('hide');
+  el.style.display='none';     // beats any earlier inline display:flex
+}
+function showConfigScreen(){
+  const el=document.getElementById('config-screen');
+  if(!el)return;
+  el.classList.remove('hide');
+  el.style.display='flex';
+}
+
 // ════════════════════════════════════════════════════════════════════
 // SUPABASE CONFIG & CONNECTION
 // ════════════════════════════════════════════════════════════════════
@@ -1296,7 +1310,7 @@ document.getElementById('cfg-connect-btn').addEventListener('click', async ()=>{
   saveCfg(url, key, cfg?.codeHash||hashCode(code));
   try{ sessionStorage.setItem(SESH_KEY,'1'); }catch{}
   sbReady=true;
-  document.getElementById('config-screen').classList.add('hide');
+  hideConfigScreen();
   setSyncStatus('online');
   btn.textContent='Connect & Enter'; btn.disabled=false;
   await loadExpensesFromSupabase();
@@ -1313,7 +1327,7 @@ async function bootConfig(){
     // Re-initialise silently
     if(initSupabase(cfg.url,cfg.key)){
       sbReady=true;
-      document.getElementById('config-screen').classList.add('hide');
+      hideConfigScreen();
       setSyncStatus('syncing');
       await loadExpensesFromSupabase();
       subscribeRealtime();
@@ -1322,7 +1336,7 @@ async function bootConfig(){
   }
   // Pre-fill URL/key if saved
   if(cfg){ document.getElementById('cfg-url').value=cfg.url||''; document.getElementById('cfg-key').value=cfg.key||''; }
-  document.getElementById('config-screen').style.display='flex';
+  showConfigScreen();
 }
 
 // ════════════════════════════════════════════════════════════════════
