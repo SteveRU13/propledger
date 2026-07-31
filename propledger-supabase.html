@@ -310,18 +310,7 @@
   <div class="add-form">
     <div class="form-row">
       <label>Expense Category</label>
-      <select id="inp-cat">
-        <optgroup label="General"><option>Supplies</option><option>Miscellaneous</option></optgroup>
-        <optgroup label="Finance"><option>Mortgage / Loan Interest</option></optgroup>
-        <optgroup label="Rates &amp; Taxes"><option>Council Rates</option><option>Water Rates</option><option>Land Tax</option></optgroup>
-        <optgroup label="Insurance"><option>Building Insurance</option><option>Landlord Insurance</option></optgroup>
-        <optgroup label="Agent / Management"><option>Property Management Fee</option><option>Letting / Leasing Fee</option><option>Advertising</option></optgroup>
-        <optgroup label="Repairs"><option>Repairs &amp; Maintenance</option><option>Plumbing</option><option>Electrical</option><option>Pest Control</option></optgroup>
-        <optgroup label="Maintenance"><option>Gardening / Lawn Care</option><option>Cleaning</option><option>Carpet / Floor Care</option></optgroup>
-        <optgroup label="Capital Works"><option>Capital Improvements</option><option>Depreciation (Estimate)</option></optgroup>
-        <optgroup label="Professional"><option>Accounting / Tax Fees</option><option>Legal Fees</option></optgroup>
-        <optgroup label="Other"><option>Travel (Inspection)</option><option>Strata / Body Corporate</option></optgroup>
-      </select>
+      <select id="inp-cat"></select>
     </div>
     <div class="form-grid">
       <div class="form-row">
@@ -403,6 +392,34 @@
   </div>
 </div>
 
+<!-- Edit expense modal -->
+<div class="modal-overlay" id="edit-modal" role="dialog" aria-modal="true">
+  <div class="modal-box">
+    <div class="modal-title">Edit Expense</div>
+    <div id="edit-summary" style="font-size:.8rem;color:var(--mid);margin-bottom:14px"></div>
+    <div class="form-row">
+      <label>Category</label>
+      <select id="edit-cat"></select>
+    </div>
+    <div class="form-row">
+      <label>Building</label>
+      <select id="edit-bld"></select>
+    </div>
+    <div class="form-row">
+      <label>Supplier / Description</label>
+      <input type="text" id="edit-desc" maxlength="120" placeholder="Optional">
+    </div>
+    <div class="form-row" style="margin-bottom:4px">
+      <label>Notes</label>
+      <textarea id="edit-notes" rows="2" maxlength="500" style="resize:none" placeholder="Optional"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn primary" id="edit-save-btn">Save Changes</button>
+      <button class="modal-btn" id="edit-cancel-btn" style="background:var(--cream);color:var(--ink)">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- Notes modal -->
 <div class="modal-overlay" id="notes-modal" role="dialog" aria-modal="true">
   <div class="modal-box">
@@ -472,8 +489,58 @@ function saveBldNames(names){try{localStorage.setItem(BLD_NAMES_KEY,JSON.stringi
 function getBuildings(){const names=loadBldNames();return BLD_DEFAULTS.map((b,i)=>({...b,label:names?names[i]:b.label}));}
 // Convenience alias used throughout — evaluated at call time
 Object.defineProperty(window,'BUILDINGS',{get:getBuildings});
-const CAT_COLORS={'General':'#e84393','Finance':'#c9a84c','Rates & Taxes':'#e67e22','Insurance':'#3498db','Agent / Management':'#9b59b6','Repairs':'#e74c3c','Maintenance':'#1abc9c','Capital Works':'#2c3e50','Professional':'#34495e','Other':'#95a5a6'};
-const CAT_GROUP={'Supplies':'General','Miscellaneous':'General','Mortgage / Loan Interest':'Finance','Council Rates':'Rates & Taxes','Water Rates':'Rates & Taxes','Land Tax':'Rates & Taxes','Building Insurance':'Insurance','Landlord Insurance':'Insurance','Property Management Fee':'Agent / Management','Letting / Leasing Fee':'Agent / Management','Advertising':'Agent / Management','Repairs & Maintenance':'Repairs','Plumbing':'Repairs','Electrical':'Repairs','Pest Control':'Repairs','Gardening / Lawn Care':'Maintenance','Cleaning':'Maintenance','Carpet / Floor Care':'Maintenance','Capital Improvements':'Capital Works','Depreciation (Estimate)':'Capital Works','Accounting / Tax Fees':'Professional','Legal Fees':'Professional','Travel (Inspection)':'Other','Strata / Body Corporate':'Other'};
+// ══ CANADIAN CATEGORY STRUCTURE ══════════════════════════════════════
+// Single source of truth: dropdowns, group map and colours all derive from this.
+// kind: 'current' = deductible in year paid | 'capital' = claimed via CCA
+const CAT_STRUCTURE=[
+  {group:'General',                kind:'current', color:'#e84393', cats:['Supplies','Miscellaneous']},
+  {group:'Repairs',                kind:'current', color:'#e74c3c', cats:['Repairs & Maintenance','Plumbing','Electrical','Pest Control']},
+  {group:'Building Systems & HVAC',kind:'current', color:'#d35400', cats:['Furnace Service & Filters','Water Heater Service','Duct & Vent Cleaning','Other Building Systems']},
+  {group:'Maintenance',            kind:'current', color:'#1abc9c', cats:['Cleaning','Carpet / Floor Care','Gardening / Lawn Care','Landscaping']},
+  {group:'Operating',              kind:'current', color:'#16a085', cats:['Equipment Rental & Leasing','Warranties & Service Contracts']},
+  {group:'Taxes & Utilities',      kind:'current', color:'#e67e22', cats:['Property Taxes','Utilities — Water & Sewer','Utilities — Electricity','Utilities — Heating / Gas','Condo Fees']},
+  {group:'Insurance',              kind:'current', color:'#3498db', cats:['Building Insurance','Landlord Insurance']},
+  {group:'Finance',                kind:'current', color:'#c9a84c', cats:['Mortgage Interest','Bank Charges']},
+  {group:'Agent / Management',     kind:'current', color:'#9b59b6', cats:['Property Management Fee','Letting / Leasing Fee','Advertising']},
+  {group:'Professional',           kind:'current', color:'#34495e', cats:['Accounting / Tax Fees','Legal Fees']},
+  {group:'Travel',                 kind:'current', color:'#7f8c8d', cats:['Travel (Inspection)','Motor Vehicle']},
+  {group:'Capital · Class 12',     kind:'capital', color:'#8e44ad', cats:['Linens & Tableware']},
+  {group:'Capital · Class 8',      kind:'capital', color:'#2c3e50', cats:['Furnishings & Appliances','Security & Safety Systems']},
+  {group:'Capital · Class 6',      kind:'capital', color:'#27ae60', cats:['Fencing & Outdoor Structures']},
+  {group:'Capital · Class 1',      kind:'capital', color:'#1a3a5c', cats:['Capital Improvements — Building']},
+];
+// Derived lookups
+const CAT_COLORS={}; const CAT_GROUP={}; const GROUP_KIND={};
+CAT_STRUCTURE.forEach(g=>{
+  CAT_COLORS[g.group]=g.color;
+  GROUP_KIND[g.group]=g.kind;
+  g.cats.forEach(cat=>{CAT_GROUP[cat]=g.group;});
+});
+// Populate a <select> with grouped options
+function fillCatSelect(sel, selected){
+  if(!sel)return;
+  sel.innerHTML='';
+  CAT_STRUCTURE.forEach(g=>{
+    const og=document.createElement('optgroup');
+    og.label=g.group;
+    g.cats.forEach(cat=>{
+      const o=document.createElement('option');
+      o.value=cat; o.textContent=cat;
+      if(selected&&selected===cat)o.selected=true;
+      og.appendChild(o);
+    });
+    sel.appendChild(og);
+  });
+  // If the stored category is legacy (not in the new list), add it so it shows
+  if(selected&&!CAT_GROUP[selected]){
+    const og=document.createElement('optgroup');
+    og.label='Legacy (needs reassigning)';
+    const o=document.createElement('option');
+    o.value=selected; o.textContent=selected+' ⚠';
+    o.selected=true; og.appendChild(o);
+    sel.insertBefore(og, sel.firstChild);
+  }
+}
 const STORAGE_KEY='propledger_v3';
 const MAX_IMG_BYTES=800*1024;
 const MAX_STORE_BYTES=4.5*1024*1024;
@@ -819,6 +886,8 @@ function renderExpenses(){
       const nb=document.createElement('button');nb.className='ei-btn';setText(nb,'📝 Notes');
       nb.addEventListener('click',()=>openNotesModal(exp.notes));actions.appendChild(nb);
     }
+    const eb=document.createElement('button');eb.className='ei-btn';setText(eb,'✎ Edit');
+    eb.addEventListener('click',()=>openEditModal(exp.id));actions.appendChild(eb);
     const db=document.createElement('button');db.className='ei-btn danger';setText(db,'Delete');
     db.addEventListener('click',()=>confirmDel(exp.id));actions.appendChild(db);
     item.appendChild(actions);
@@ -1517,6 +1586,81 @@ function refreshStorageBar(){
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────
+
+// ══ EDIT EXPENSE ═════════════════════════════════════════════════════
+let editingId=null;
+
+function openEditModal(id){
+  const exp=expenses.find(e=>e.id===id);
+  if(!exp)return;
+  editingId=id;
+  const bInfo=getBuildings().find(b=>b.id===exp.building)||getBuildings()[0];
+  const dateStr=new Date(exp.date+'T12:00:00').toLocaleDateString('en-CA',{day:'numeric',month:'short',year:'numeric'});
+  setText(document.getElementById('edit-summary'), fmt(exp.amount)+' · '+dateStr+' · currently in '+bInfo.label);
+
+  fillCatSelect(document.getElementById('edit-cat'), exp.category);
+
+  const bs=document.getElementById('edit-bld');
+  bs.innerHTML='';
+  getBuildings().forEach(b=>{
+    const o=document.createElement('option');
+    o.value=String(b.id); o.textContent=b.label;
+    if(b.id===exp.building)o.selected=true;
+    bs.appendChild(o);
+  });
+
+  document.getElementById('edit-desc').value=exp.description||'';
+  document.getElementById('edit-notes').value=exp.notes||'';
+  document.getElementById('edit-modal').classList.add('open');
+}
+
+function closeEditModal(){
+  editingId=null;
+  document.getElementById('edit-modal').classList.remove('open');
+}
+document.getElementById('edit-cancel-btn').addEventListener('click',closeEditModal);
+document.getElementById('edit-modal').addEventListener('click',function(e){
+  if(e.target===this)closeEditModal();
+});
+
+document.getElementById('edit-save-btn').addEventListener('click',async()=>{
+  if(editingId==null)return;
+  const exp=expenses.find(e=>e.id===editingId);
+  if(!exp){closeEditModal();return;}
+
+  const newCat  = document.getElementById('edit-cat').value;
+  const newGrp  = CAT_GROUP[newCat]||exp.group||'General';
+  const newBld  = parseInt(document.getElementById('edit-bld').value,10);
+  const newDesc = sanitise(document.getElementById('edit-desc').value,120);
+  const newNotes= sanitise(document.getElementById('edit-notes').value,500);
+
+  if(![1,2,3].includes(newBld)){showToast('Invalid building');return;}
+
+  const btn=document.getElementById('edit-save-btn');
+  btn.textContent='Saving…'; btn.disabled=true;
+  try{
+    setSyncStatus('syncing');
+    const {error}=await sbClient.from('expenses')
+      .update({category:newCat, grp:newGrp, building:newBld, description:newDesc, notes:newNotes})
+      .eq('id', editingId);
+    if(error) throw error;
+    exp.category=newCat; exp.group=newGrp; exp.building=newBld;
+    exp.description=newDesc; exp.notes=newNotes;
+    setSyncStatus('online');
+    closeEditModal();
+    buildCatFilter(); renderExpenses(); renderSummary();
+    showToast('✓ Expense updated');
+  }catch(e){
+    setSyncStatus('error');
+    showToast('⚠ Update failed: '+e.message);
+  }finally{
+    btn.textContent='Save Changes'; btn.disabled=false;
+  }
+});
+
+// Populate the add-form category dropdown from CAT_STRUCTURE
+fillCatSelect(document.getElementById('inp-cat'));
+
 document.getElementById('inp-date').value=today();
 makeBldToggles('add-bld-toggle',curBld,(id,cid)=>{curBld=id;updBldActive(cid,id);},false);
 makeBldToggles('flt-bld-toggle',fltBld,(id,cid)=>{fltBld=id;updBldActive(cid,id);renderExpenses();},true);
