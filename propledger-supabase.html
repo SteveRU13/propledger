@@ -391,9 +391,22 @@
     <button class="btn-primary" id="save-names-btn" type="button">Save Names</button>
   </div>
   <div class="add-form" style="margin-top:0">
+    <div style="font-family:'DM Serif Display',serif;font-size:1.2rem;color:var(--ink);margin-bottom:4px">Connection</div>
+    <div style="font-size:.78rem;color:var(--mid);margin-bottom:10px">Connected and syncing. Use this only to move to a different project or re-enter credentials.</div>
+    <button class="btn-secondary" id="reconnect-btn" type="button" style="margin-bottom:20px">⇄ Change connection settings</button>
     <div style="font-family:'DM Serif Display',serif;font-size:1.2rem;color:var(--ink);margin-bottom:4px">Data Management</div>
-    <div style="font-size:.78rem;color:var(--mid);margin-bottom:14px">Export all data before clearing. This cannot be undone.</div>
-    <button class="btn-secondary" id="clear-all-btn" type="button" style="border-color:var(--rust);color:var(--rust)">🗑 Clear All Expense Data</button>
+    <div style="font-size:.78rem;color:var(--mid);margin-bottom:12px">Export a CSV backup any time from the Summary tab.</div>
+    <button class="btn-secondary" id="danger-toggle" type="button">⚠ Advanced — destructive actions</button>
+    <div id="danger-zone" style="display:none;margin-top:14px;padding:14px;border:1.5px solid var(--rust);border-radius:10px;background:#fff5f5">
+      <div style="font-size:.82rem;font-weight:600;color:var(--rust);margin-bottom:6px">Danger Zone</div>
+      <div id="danger-stats" style="font-size:.78rem;color:var(--ink);margin-bottom:10px;line-height:1.5"></div>
+      <div id="export-gate" style="font-size:.75rem;margin-bottom:10px;padding:8px 10px;border-radius:6px;background:var(--paper);color:var(--mid)"></div>
+      <label style="display:block;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--mid);margin-bottom:5px">Type DELETE to enable</label>
+      <input type="text" id="danger-confirm" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="DELETE"
+        style="width:100%;padding:10px 13px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:.9rem;background:#fff;color:var(--ink);-webkit-appearance:none;margin-bottom:10px">
+      <button class="btn-secondary" id="clear-all-btn" type="button" disabled
+        style="border-color:var(--border);color:#bbb;margin-top:0">🗑 Clear All Expense Data</button>
+    </div>
   </div>
 </div>
 
@@ -1077,6 +1090,8 @@ function exportCSV(bld){
   a.href=url;a.download=(bld?'expenses_building'+bld:'expenses_all')+'_'+today()+'.csv';
   document.body.appendChild(a);a.click();
   setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},100);
+  exportedThisSession=true;
+  if(document.getElementById('danger-zone')&&document.getElementById('danger-zone').style.display==='block')refreshDangerZone();
   showToast('CSV exported!');
 }
 
@@ -1139,11 +1154,75 @@ document.getElementById('save-names-btn').addEventListener('click',function(){
   showToast('✓ Building names saved');
 });
 
+// ── Danger zone: multiple independent guards before bulk delete ────────────
+// 1. Collapsed by default   2. Shows what will be lost   3. Requires a CSV
+// export this session       4. Requires typing DELETE    5. Final confirm modal
+let exportedThisSession=false;
+
+
+// Deliberate route back to the config screen (does not delete any data)
+document.getElementById('reconnect-btn').addEventListener('click',function(){
+  showConfigScreen();
+  const codeField=document.getElementById('cfg-code')||document.getElementById('cfg-access-code');
+  if(codeField)codeField.value='';
+});
+
+document.getElementById('danger-toggle').addEventListener('click',function(){
+  const z=document.getElementById('danger-zone');
+  const open=z.style.display==='block';
+  z.style.display=open?'none':'block';
+  setText(this, open?'⚠ Advanced — destructive actions':'Hide advanced');
+  if(!open) refreshDangerZone();
+});
+
+function refreshDangerZone(){
+  const total=expenses.reduce((s,e)=>s+e.amount,0);
+  const withRec=expenses.filter(e=>e.receipt).length;
+  const stats=document.getElementById('danger-stats');
+  if(expenses.length===0){
+    setText(stats,'There is no expense data to delete.');
+  }else{
+    setText(stats,'This will permanently delete '+expenses.length+
+      ' expense'+(expenses.length!==1?'s':'')+' totalling '+fmt(total)+
+      (withRec?', including '+withRec+' receipt file'+(withRec!==1?'s':''):'')+
+      '. This cannot be undone.');
+  }
+  const gate=document.getElementById('export-gate');
+  if(exportedThisSession){
+    setText(gate,'✓ CSV exported this session');
+    gate.style.color='#1e8449';
+  }else{
+    setText(gate,'⚠ Export a CSV backup first — Summary tab → Export All Buildings CSV');
+    gate.style.color='var(--rust)';
+  }
+  document.getElementById('danger-confirm').value='';
+  evaluateDangerGuards();
+}
+
+function evaluateDangerGuards(){
+  const typed=document.getElementById('danger-confirm').value.trim().toUpperCase()==='DELETE';
+  const btn=document.getElementById('clear-all-btn');
+  const allow = typed && exportedThisSession && expenses.length>0;
+  btn.disabled=!allow;
+  btn.style.borderColor = allow?'var(--rust)':'var(--border)';
+  btn.style.color       = allow?'var(--rust)':'#bbb';
+}
+document.getElementById('danger-confirm').addEventListener('input',evaluateDangerGuards);
+
 document.getElementById('clear-all-btn').addEventListener('click',function(){
+  if(this.disabled)return;
+  // Re-check every guard at the moment of the click
+  const typed=document.getElementById('danger-confirm').value.trim().toUpperCase()==='DELETE';
+  if(!typed||!exportedThisSession||expenses.length===0){
+    showToast('Guards not satisfied — nothing deleted'); evaluateDangerGuards(); return;
+  }
+  const total=expenses.reduce((s,e)=>s+e.amount,0);
   pendingDelId='__ALL__';
   const modal=document.getElementById('confirm-modal');
-  modal.querySelector('.modal-title').textContent='Clear ALL expense data?';
-  modal.querySelector('.modal-body').textContent='This will permanently delete every expense entry across all buildings. Export first if you need a backup.';
+  modal.querySelector('.modal-title').textContent='Delete all '+expenses.length+' expenses?';
+  modal.querySelector('.modal-body').textContent=
+    'You are about to permanently delete '+expenses.length+' expenses totalling '+fmt(total)+
+    ' across all buildings, plus their receipt files. This cannot be undone from within the app.';
   modal.classList.add('open');
 });
 
@@ -1445,7 +1524,7 @@ document.getElementById('cfg-connect-btn').addEventListener('click', async ()=>{
   }catch(e){ setText(err,'Network error — check your URL and internet connection'); btn.textContent='Connect & Enter'; btn.disabled=false; return; }
 
   saveCfg(url, key, cfg?.codeHash||hashCode(code));
-  try{ sessionStorage.setItem(SESH_KEY,'1'); }catch{}
+  try{ localStorage.setItem(SESH_KEY,'1'); }catch{}
   sbReady=true;
   hideConfigScreen();
   setSyncStatus('online');
@@ -1458,10 +1537,12 @@ document.getElementById('cfg-connect-btn').addEventListener('click', async ()=>{
 async function bootConfig(){
   const cfg=loadCfg();
   let sessionOk=false;
-  try{ sessionOk=sessionStorage.getItem(SESH_KEY)==='1'; }catch{}
+  try{ sessionOk=localStorage.getItem(SESH_KEY)==='1'; }catch{}
 
-  if(cfg&&sessionOk){
-    // Re-initialise silently
+  // Once set up, reconnect silently on every launch — the PIN is the per-launch
+  // lock; the access code is a one-time gate for adding a NEW device.
+  const setupComplete = !!(cfg && cfg.url && cfg.key && cfg.codeHash);
+  if(setupComplete){
     if(initSupabase(cfg.url,cfg.key)){
       sbReady=true;
       hideConfigScreen();
@@ -1635,6 +1716,9 @@ document.getElementById('confirm-yes').addEventListener('click',async()=>{
     try{
       await sbClient.from('expenses').delete().neq('id',0);
       expenses=[]; renderExpenses(); renderSummary();
+      exportedThisSession=false;
+      const _dz=document.getElementById('danger-zone');
+      if(_dz){_dz.style.display='none';setText(document.getElementById('danger-toggle'),'⚠ Advanced — destructive actions');}
       setSyncStatus('online'); showToast('All data cleared');
     }catch(e){ setSyncStatus('error'); showToast('⚠ Clear failed: '+e.message); }
     modal.querySelector('.modal-title').textContent='Delete this expense?';
