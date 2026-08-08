@@ -29,8 +29,9 @@
   .tab-btn.active{background:var(--gold);border-color:var(--gold);color:var(--ink);font-weight:600}
   .screen{display:none;padding:16px}
   .screen.active{display:block}
-  .building-toggle{display:flex;gap:6px;margin-bottom:16px;flex-wrap:wrap}
-  .bld-btn{flex:1;min-width:80px;padding:10px 6px;border-radius:10px;border:2px solid var(--border);background:var(--card);font-family:'DM Sans',sans-serif;font-size:.78rem;font-weight:500;cursor:pointer;transition:all .2s;color:var(--mid)}
+  /* auto-fit grid: reflows cleanly for any number of buildings, any screen */
+  .building-toggle{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:8px;margin-bottom:16px}
+  .bld-btn{width:100%;min-height:46px;display:flex;align-items:center;justify-content:center;text-align:center;line-height:1.25;overflow-wrap:anywhere;padding:9px 6px;border-radius:10px;border:2px solid var(--border);background:var(--card);font-family:'DM Sans',sans-serif;font-size:.78rem;font-weight:500;cursor:pointer;transition:all .2s;color:var(--mid)}
   .bld-btn.ab1{background:var(--b1);border-color:var(--b1);color:#fff}
   .bld-btn.ab2{background:var(--b2);border-color:var(--b2);color:#fff}
   .bld-btn.ab3{background:var(--b3);border-color:var(--b3);color:#fff}
@@ -384,8 +385,8 @@
 <div id="screen-settings" class="screen scrollable">
   <div class="add-form">
     <div style="margin-bottom:16px">
-      <div style="font-family:'DM Serif Display',serif;font-size:1.2rem;color:var(--ink);margin-bottom:4px">Building Names</div>
-      <div style="font-size:.78rem;color:var(--mid)">Customise the name for each building. Changes apply everywhere immediately.</div>
+      <div style="font-family:'DM Serif Display',serif;font-size:1.2rem;color:var(--ink);margin-bottom:4px">Buildings</div>
+      <div style="font-size:.78rem;color:var(--mid)">Rename, add or remove buildings. Changes apply everywhere immediately.</div>
     </div>
     <div id="bld-name-fields"></div>
     <button class="btn-primary" id="save-names-btn" type="button">Save Names</button>
@@ -498,15 +499,73 @@
 'use strict';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
-const BLD_DEFAULTS=[{id:1,label:'Building 1',icon:'🏠',cls:'ab1',color:'#1a3a5c'},{id:2,label:'Building 2',icon:'🏢',cls:'ab2',color:'#2d6a4f'},{id:3,label:'Building 3',icon:'🏗',cls:'ab3',color:'#6b2d5c'}];
-const BLD_NAMES_KEY='propledger_bld_names';
-function loadBldNames(){try{const r=localStorage.getItem(BLD_NAMES_KEY);if(!r)return null;const p=JSON.parse(r);if(!Array.isArray(p)||p.length!==3)return null;return p.map((n,i)=>typeof n==='string'&&n.trim().length>0?sanitiseName(n):BLD_DEFAULTS[i].label);}catch{return null;}}
+// ══ BUILDINGS — user-managed list, any number ════════════════════════════
+const BLD_KEY='propledger_buildings';
+const BLD_NAMES_KEY='propledger_bld_names';   // legacy (3 names) — migrated below
+const BLD_PALETTE=['#1a3a5c','#2d6a4f','#6b2d5c','#8a5a2b','#2c5f7c','#5c3a6b',
+                   '#7a4a2a','#376e5f','#4a3a6b','#6b3a3a'];
+const BLD_ICONS  =['🏠','🏢','🏗','🏘','🏡','🏬','🏙','🏫','🏨','🏦'];
+const MAX_BUILDINGS=10;
+
 function sanitiseName(s){return String(s||'').replace(/[<>"'`]/g,'').trim().slice(0,40);}
-function saveBldNames(names){try{localStorage.setItem(BLD_NAMES_KEY,JSON.stringify(names));}catch{}}
-// BUILDINGS is always read fresh so name changes apply everywhere immediately
-function getBuildings(){const names=loadBldNames();return BLD_DEFAULTS.map((b,i)=>({...b,label:names?names[i]:b.label}));}
-// Convenience alias used throughout — evaluated at call time
+
+// Decorate a stored {id,label} with its derived colour and icon (by position)
+function decorate(list){
+  return list.map((b,i)=>({
+    id:b.id,
+    label:b.label,
+    color:BLD_PALETTE[i%BLD_PALETTE.length],
+    icon: BLD_ICONS[i%BLD_ICONS.length],
+  }));
+}
+
+function loadBuildings(){
+  // Preferred: the new dynamic list
+  try{
+    const raw=localStorage.getItem(BLD_KEY);
+    if(raw){
+      const p=JSON.parse(raw);
+      if(Array.isArray(p)&&p.length){
+        const clean=p.filter(b=>b&&Number.isFinite(b.id)&&typeof b.label==='string')
+                     .map(b=>({id:b.id,label:sanitiseName(b.label)||('Building '+b.id)}));
+        if(clean.length)return decorate(clean);
+      }
+    }
+  }catch{}
+  // Migrate from the old 3-name format if present
+  try{
+    const raw=localStorage.getItem(BLD_NAMES_KEY);
+    if(raw){
+      const p=JSON.parse(raw);
+      if(Array.isArray(p)&&p.length){
+        const migrated=p.map((n,i)=>({id:i+1,label:sanitiseName(n)||('Building '+(i+1))}));
+        try{localStorage.setItem(BLD_KEY,JSON.stringify(migrated));}catch{}
+        return decorate(migrated);
+      }
+    }
+  }catch{}
+  // First run
+  const def=[{id:1,label:'Building 1'},{id:2,label:'Building 2'},{id:3,label:'Building 3'}];
+  return decorate(def);
+}
+
+function saveBuildings(list){
+  try{
+    localStorage.setItem(BLD_KEY,JSON.stringify(
+      list.map(b=>({id:b.id,label:sanitiseName(b.label)||('Building '+b.id)}))));
+    return true;
+  }catch{ showToast('⚠ Could not save buildings'); return false; }
+}
+
+function getBuildings(){ return loadBuildings(); }
+function validBuildingId(id){ return getBuildings().some(b=>b.id===id); }
+function nextBuildingId(){
+  const ids=getBuildings().map(b=>b.id);
+  return (ids.length?Math.max(...ids):0)+1;
+}
+// Evaluated at call time so changes apply everywhere immediately
 Object.defineProperty(window,'BUILDINGS',{get:getBuildings});
+
 // ══ CANADIAN CATEGORY STRUCTURE ══════════════════════════════════════
 // Single source of truth: dropdowns, group map and colours all derive from this.
 // kind: 'current' = deductible in year paid | 'capital' = claimed via CCA
@@ -599,7 +658,7 @@ function loadExpenses(){
     // Validate every stored record to guard against tampered localStorage
     return arr.filter(e=>
       e&&typeof e.id==='number'&&
-      typeof e.building==='number'&&[1,2,3].includes(e.building)&&
+      typeof e.building==='number'&&Number.isFinite(e.building)&&e.building>0&&
       typeof e.category==='string'&&e.category.length<=60&&
       typeof e.amount==='number'&&Number.isFinite(e.amount)&&e.amount>0&&
       typeof e.date==='string'&&validDate(e.date)&&
@@ -636,25 +695,38 @@ let curBld=1, fltBld=1, fltCat='all', pendingReceipt=null, pendingDelId=null;
 let pendingReceiptName=null;
 
 // ── Building toggle factory ───────────────────────────────────────────────────
+function bldStyleFor(id){
+  if(id===0)return{bg:'#0a0a0f',border:'#c9a84c',fg:'#c9a84c'};
+  const b=getBuildings().find(x=>x.id===id);
+  return b?{bg:b.color,border:b.color,fg:'#ffffff'}:null;
+}
+function paintBldBtn(btn,active,id){
+  if(active){
+    const s=bldStyleFor(id);
+    if(s){btn.style.background=s.bg;btn.style.borderColor=s.border;btn.style.color=s.fg;}
+  }else{
+    btn.style.background='';btn.style.borderColor='';btn.style.color='';
+  }
+}
 function makeBldToggles(containerId,activeId,onClick,includeAll=false){
   const c=document.getElementById(containerId);
+  if(!c)return;
   c.innerHTML='';
-  const list=includeAll?[...BUILDINGS,{id:0,label:'All',icon:'',cls:'ab0'}]:BUILDINGS;
+  const list=includeAll?[...getBuildings(),{id:0,label:'All',icon:''}]:getBuildings();
   list.forEach(b=>{
     const btn=document.createElement('button');
-    btn.type='button'; btn.className='bld-btn'+(b.id===activeId?' '+b.cls:'');
+    btn.type='button'; btn.className='bld-btn';
     btn.dataset.bid=String(b.id);
     setText(btn,(b.icon?b.icon+' ':'')+b.label);
+    paintBldBtn(btn,b.id===activeId,b.id);
     btn.addEventListener('click',()=>onClick(b.id,containerId));
     c.appendChild(btn);
   });
 }
-
 function updBldActive(containerId,activeId){
   document.querySelectorAll('#'+containerId+' .bld-btn').forEach(btn=>{
     const bid=parseInt(btn.dataset.bid,10);
-    const info=[...BUILDINGS,{id:0,cls:'ab0'}].find(x=>x.id===bid);
-    btn.className='bld-btn'+(bid===activeId?' '+(info?.cls||''):'');
+    paintBldBtn(btn,bid===activeId,bid);
   });
 }
 
@@ -1120,38 +1192,108 @@ function showToast(msg){
 }
 
 // ── Settings ─────────────────────────────────────────────────────────────────
+function buildingExpenseCount(id){ return expenses.filter(e=>e.building===id).length; }
+
 function renderSettings(){
   const container=document.getElementById('bld-name-fields');
+  if(!container)return;
   container.innerHTML='';
   const buildings=getBuildings();
+
   buildings.forEach(b=>{
+    const used=buildingExpenseCount(b.id);
     const row=document.createElement('div');row.className='bld-name-row';
-    const swatch=document.createElement('div');swatch.className='bld-name-swatch';swatch.style.background=b.color;
+
+    const swatch=document.createElement('div');
+    swatch.className='bld-name-swatch';swatch.style.background=b.color;
+
     const input=document.createElement('input');
     input.type='text';input.maxLength=40;input.value=b.label;
-    input.setAttribute('data-bid',b.id);
+    input.dataset.bid=String(b.id);
     input.setAttribute('aria-label','Name for building '+b.id);
-    input.placeholder=BLD_DEFAULTS[b.id-1].label;
-    row.appendChild(swatch);row.appendChild(input);
+    input.placeholder='Building '+b.id;
+
+    const rm=document.createElement('button');
+    rm.type='button';
+    rm.style.cssText='flex-shrink:0;width:34px;height:34px;border-radius:8px;'+
+      'border:1.5px solid var(--border);background:var(--paper);color:var(--mid);'+
+      'font-size:.95rem;cursor:pointer;line-height:1';
+    setText(rm,'✕');
+    rm.title = buildings.length<=1 ? 'At least one building is required'
+             : used>0 ? used+' expense(s) use this building' : 'Remove this building';
+    if(buildings.length<=1||used>0){
+      rm.disabled=true; rm.style.opacity='.35'; rm.style.cursor='not-allowed';
+    }else{
+      rm.addEventListener('click',()=>removeBuilding(b.id));
+    }
+
+    row.append(swatch,input,rm);
     container.appendChild(row);
+
+    if(used>0){
+      const note=document.createElement('div');
+      note.style.cssText='font-size:.68rem;color:var(--mid);margin:-6px 0 10px 24px';
+      setText(note,used+' expense'+(used!==1?'s':'')+' recorded — reassign them before removing');
+      container.appendChild(note);
+    }
   });
+
+  // Add-building control
+  const addWrap=document.createElement('div');
+  addWrap.style.cssText='margin-top:4px';
+  const addBtn=document.createElement('button');
+  addBtn.type='button'; addBtn.className='btn-secondary'; addBtn.style.marginTop='0';
+  const atMax=buildings.length>=MAX_BUILDINGS;
+  setText(addBtn, atMax?'Maximum '+MAX_BUILDINGS+' buildings':'＋ Add another building');
+  if(atMax){addBtn.disabled=true;addBtn.style.opacity='.5';}
+  else addBtn.addEventListener('click',addBuilding);
+  addWrap.appendChild(addBtn);
+  container.appendChild(addWrap);
+}
+
+function refreshAllToggles(){
+  if(!validBuildingId(curBld)){const f=getBuildings()[0];curBld=f?f.id:1;}
+  if(fltBld!==0&&!validBuildingId(fltBld)){fltBld=0;}
+  makeBldToggles('add-bld-toggle',curBld,(id,cid)=>{curBld=id;updBldActive(cid,id);},false);
+  makeBldToggles('flt-bld-toggle',fltBld,(id,cid)=>{fltBld=id;updBldActive(cid,id);renderExpenses();},true);
+}
+
+function addBuilding(){
+  const list=getBuildings().map(b=>({id:b.id,label:b.label}));
+  if(list.length>=MAX_BUILDINGS){showToast('Maximum '+MAX_BUILDINGS+' buildings');return;}
+  const id=nextBuildingId();
+  list.push({id,label:'Building '+id});
+  if(!saveBuildings(list))return;
+  renderSettings(); refreshAllToggles(); renderSummary();
+  showToast('✓ Building added — rename it above');
+}
+
+function removeBuilding(id){
+  const list=getBuildings().map(b=>({id:b.id,label:b.label}));
+  if(list.length<=1){showToast('At least one building is required');return;}
+  if(buildingExpenseCount(id)>0){
+    showToast('Reassign its expenses first');return;
+  }
+  const kept=list.filter(b=>b.id!==id);
+  if(!saveBuildings(kept))return;
+  renderSettings(); refreshAllToggles(); renderExpenses(); renderSummary();
+  showToast('Building removed');
 }
 
 document.getElementById('save-names-btn').addEventListener('click',function(){
-  const inputs=document.querySelectorAll('#bld-name-fields input');
-  const names=[];
-  let valid=true;
+  const inputs=document.querySelectorAll('#bld-name-fields input[data-bid]');
+  const list=[];
   inputs.forEach(inp=>{
-    const v=sanitiseName(inp.value)||BLD_DEFAULTS[parseInt(inp.dataset.bid)-1].label;
-    names.push(v);
+    const id=parseInt(inp.dataset.bid,10);
+    const v=sanitiseName(inp.value)||('Building '+id);
     inp.value=v;
+    list.push({id,label:v});
   });
-  if(!valid)return;
-  saveBldNames(names);
-  // Refresh all toggles with new names
-  makeBldToggles('add-bld-toggle',curBld,(id,cid)=>{curBld=id;updBldActive(cid,id);},false);
-  makeBldToggles('flt-bld-toggle',fltBld,(id,cid)=>{fltBld=id;updBldActive(cid,id);renderExpenses();},true);
-  showToast('✓ Building names saved');
+  if(!list.length)return;
+  if(!saveBuildings(list))return;
+  refreshAllToggles();
+  renderExpenses(); renderSummary();
+  showToast('✓ Buildings saved');
 });
 
 // ── Danger zone: multiple independent guards before bulk delete ────────────
@@ -1789,7 +1931,7 @@ document.getElementById('edit-save-btn').addEventListener('click',async()=>{
   const newDesc = sanitise(document.getElementById('edit-desc').value,120);
   const newNotes= sanitise(document.getElementById('edit-notes').value,500);
 
-  if(![1,2,3].includes(newBld)){showToast('Invalid building');return;}
+  if(!validBuildingId(newBld)){showToast('Invalid building');return;}
 
   const btn=document.getElementById('edit-save-btn');
   btn.textContent='Saving…'; btn.disabled=true;
