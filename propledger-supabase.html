@@ -335,13 +335,18 @@
     <div class="form-row">
       <label>Receipt Photo</label>
       <div class="receipt-zone" id="receipt-zone">
-        <input type="file" id="receipt-file" accept="image/jpeg,image/png,image/webp" capture="environment">
+        <input type="file" id="receipt-file" accept="image/jpeg,image/png,image/webp,application/pdf">
         <div class="rz-icon">📷</div>
-        <div class="rz-text">Tap to take photo or upload</div>
-        <div class="rz-sub">Camera · Gallery · JPEG / PNG</div>
+        <div class="rz-text">Take photo, or upload from device</div>
+        <div class="rz-sub">Camera · Photos · Files · JPEG, PNG, PDF</div>
       </div>
       <div class="receipt-preview" id="receipt-preview">
         <img id="receipt-img" alt="Receipt preview">
+        <div id="receipt-pdf-badge" style="display:none;padding:26px 16px;text-align:center;background:var(--paper)">
+          <div style="font-size:2rem">📄</div>
+          <div id="receipt-pdf-name" style="font-size:.8rem;color:var(--ink);font-weight:600;margin-top:6px;word-break:break-all"></div>
+          <div style="font-size:.68rem;color:var(--mid);margin-top:2px">PDF attached</div>
+        </div>
         <button class="rp-remove" id="rp-remove-btn" type="button" aria-label="Remove receipt">✕</button>
         <div class="rp-label">✓ Receipt attached</div>
       </div>
@@ -546,6 +551,11 @@ const MAX_IMG_BYTES=800*1024;
 const MAX_STORE_BYTES=4.5*1024*1024;
 const SAFE_DATE_RE=/^\d{4}-\d{2}-\d{2}$/;
 const SAFE_IMG_RE=/^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/]+=*$/;
+// A receipt is either a local base64 preview or a remote https URL after sync.
+const SAFE_URL_RE=/^https:\/\/[A-Za-z0-9.\-]+\/[^\s"'<>]*$/;
+function isValidReceipt(r){
+  return typeof r==='string' && (SAFE_IMG_RE.test(r) || SAFE_URL_RE.test(r));
+}
 
 // ── Security helpers ──────────────────────────────────────────────────────────
 // Safe text setter — NEVER use innerHTML with user data
@@ -580,7 +590,7 @@ function loadExpenses(){
       typeof e.category==='string'&&e.category.length<=60&&
       typeof e.amount==='number'&&Number.isFinite(e.amount)&&e.amount>0&&
       typeof e.date==='string'&&validDate(e.date)&&
-      (e.receipt===null||e.receipt===undefined||(typeof e.receipt==='string'&&SAFE_IMG_RE.test(e.receipt)))
+      (e.receipt===null||e.receipt===undefined||(typeof e.receipt==='string'&&isValidReceipt(e.receipt)))
     );
   }catch{return[];}
 }
@@ -610,6 +620,7 @@ function refreshStorageBar(){
 // ── State ─────────────────────────────────────────────────────────────────────
 let expenses=loadExpenses();
 let curBld=1, fltBld=1, fltCat='all', pendingReceipt=null, pendingDelId=null;
+let pendingReceiptName=null;
 
 // ── Building toggle factory ───────────────────────────────────────────────────
 function makeBldToggles(containerId,activeId,onClick,includeAll=false){
@@ -635,18 +646,54 @@ function updBldActive(containerId,activeId){
 }
 
 // ── Receipt capture ───────────────────────────────────────────────────────────
+
+// Show the chosen receipt in the preview box (image thumbnail or PDF badge)
+function showReceiptChosen(name, isPdf){
+  document.getElementById('receipt-zone').style.display='none';
+  document.getElementById('receipt-preview').style.display='block';
+  const img=document.getElementById('receipt-img');
+  const badge=document.getElementById('receipt-pdf-badge');
+  if(isPdf){
+    img.style.display='none';
+    if(badge){badge.style.display='block';
+      setText(document.getElementById('receipt-pdf-name'), name||'receipt.pdf');}
+  }else{
+    img.style.display='block';
+    if(badge)badge.style.display='none';
+  }
+}
+function isPdfReceipt(r){
+  return typeof r==='string' && (r.startsWith('data:application/pdf') || /\.pdf($|\?)/i.test(r));
+}
+
 document.getElementById('receipt-file').addEventListener('change',function(e){
   const file=e.target.files[0];
   if(!file)return;
-  if(!['image/jpeg','image/png','image/webp'].includes(file.type)){showToast('Please use JPEG, PNG or WebP');return;}
-  if(file.size>10*1024*1024){showToast('Image too large — max 10 MB');return;}
+  const IMG_TYPES=['image/jpeg','image/png','image/webp'];
+  const isPdf = file.type==='application/pdf';
+  if(!IMG_TYPES.includes(file.type) && !isPdf){
+    showToast('Use a JPEG, PNG, WebP or PDF'); return;
+  }
+  if(file.size>10*1024*1024){showToast('File too large — max 10 MB');return;}
+
   const reader=new FileReader();
+
+  if(isPdf){
+    // PDFs cannot be compressed or drawn to canvas — keep the original bytes
+    reader.onload=ev=>{
+      pendingReceipt=ev.target.result;   // data:application/pdf;base64,...
+      pendingReceiptName=file.name;
+      showReceiptChosen(file.name, true);
+    };
+    reader.readAsDataURL(file);
+    return;
+  }
+
   reader.onload=ev=>compressImg(ev.target.result,compressed=>{
-    if(!compressed){showToast('Could not compress — try a smaller photo');return;}
+    if(!compressed){showToast('Could not compress — try a smaller image');return;}
     pendingReceipt=compressed;
-    document.getElementById('receipt-zone').style.display='none';
-    document.getElementById('receipt-preview').style.display='block';
-    // src set only after validating the data URI format
+    pendingReceiptName=file.name;
+    showReceiptChosen(file.name, false);
     if(SAFE_IMG_RE.test(compressed)) document.getElementById('receipt-img').src=compressed;
   });
   reader.readAsDataURL(file);
@@ -670,7 +717,11 @@ function compressImg(dataUrl,cb){
 
 document.getElementById('rp-remove-btn').addEventListener('click',clearReceipt);
 function clearReceipt(){
-  pendingReceipt=null;
+  pendingReceipt=null; pendingReceiptName=null;
+  const _b=document.getElementById('receipt-pdf-badge');
+  if(_b)_b.style.display='none';
+  const _i=document.getElementById('receipt-img');
+  if(_i)_i.style.display='block';
   document.getElementById('receipt-file').value='';
   document.getElementById('receipt-zone').style.display='block';
   document.getElementById('receipt-preview').style.display='none';
@@ -867,7 +918,17 @@ function renderExpenses(){
     }
 
     // Receipt
-    if(exp.receipt&&SAFE_IMG_RE.test(exp.receipt)){
+    if(isValidReceipt(exp.receipt)&&isPdfReceipt(exp.receipt)){
+      const row=document.createElement('a');
+      row.href=exp.receipt; row.target='_blank'; row.rel='noopener noreferrer';
+      row.style.cssText='display:flex;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid var(--border);text-decoration:none;color:var(--ink);font-size:.8rem;font-weight:500';
+      const ic=document.createElement('span'); ic.textContent='📄'; ic.style.fontSize='1.1rem';
+      const tx=document.createElement('span'); setText(tx,'View PDF receipt');
+      const ar=document.createElement('span'); ar.textContent='↗';
+      ar.style.cssText='margin-left:auto;color:var(--mid)';
+      row.append(ic,tx,ar);
+      item.appendChild(row);
+    }else if(isValidReceipt(exp.receipt)){
       const img=document.createElement('img');
       img.className='ei-receipt-thumb';img.alt='Receipt';img.src=exp.receipt;
       img.addEventListener('click',()=>openLightbox(exp.id));
@@ -878,9 +939,15 @@ function renderExpenses(){
 
     // Actions
     const actions=document.createElement('div');actions.className='ei-actions';
-    if(exp.receipt&&SAFE_IMG_RE.test(exp.receipt)){
-      const vb=document.createElement('button');vb.className='ei-btn';setText(vb,'🔍 View Receipt');
-      vb.addEventListener('click',()=>openLightbox(exp.id));actions.appendChild(vb);
+    if(isValidReceipt(exp.receipt)){
+      const vb=document.createElement('button');vb.className='ei-btn';
+      const pdf=isPdfReceipt(exp.receipt);
+      setText(vb, pdf?'📄 Open PDF':'🔍 View Receipt');
+      vb.addEventListener('click',()=>{
+        if(pdf) window.open(exp.receipt,'_blank','noopener');
+        else openLightbox(exp.id);
+      });
+      actions.appendChild(vb);
     }
     if(exp.notes){
       const nb=document.createElement('button');nb.className='ei-btn';setText(nb,'📝 Notes');
@@ -910,7 +977,8 @@ document.getElementById('confirm-modal').addEventListener('click',function(e){if
 // ── Lightbox ──────────────────────────────────────────────────────────────────
 function openLightbox(id){
   const exp=expenses.find(e=>e.id===id);
-  if(!exp||!exp.receipt||!SAFE_IMG_RE.test(exp.receipt))return;
+  if(!exp||!isValidReceipt(exp.receipt))return;
+  if(isPdfReceipt(exp.receipt)){window.open(exp.receipt,'_blank','noopener');return;}
   document.getElementById('lightbox-img').src=exp.receipt;
   document.getElementById('lightbox').classList.add('open');
 }
@@ -1450,7 +1518,7 @@ async function commitExpense(exp){
   try{
     // Upload receipt to Storage if present
     let receiptUrl=null;
-    if(exp.receipt && /^data:image\//.test(exp.receipt)){
+    if(exp.receipt && /^data:(image\/|application\/pdf)/.test(exp.receipt)){
       receiptUrl = await uploadReceipt(exp.id, exp.receipt);
     }
     const row={
@@ -1486,11 +1554,14 @@ async function commitExpense(exp){
 async function uploadReceipt(id, dataUrl){
   document.getElementById('upload-progress').style.display='block';
   try{
+    const isPdf=dataUrl.startsWith('data:application/pdf');
+    const mime=isPdf?'application/pdf':'image/jpeg';
+    const ext =isPdf?'pdf':'jpg';
     const base64=dataUrl.split(',')[1];
     const bytes=Uint8Array.from(atob(base64),c=>c.charCodeAt(0));
-    const blob=new Blob([bytes],{type:'image/jpeg'});
-    const path=`receipts/${id}.jpg`;
-    const {error}=await sbClient.storage.from('receipts').upload(path,blob,{contentType:'image/jpeg',upsert:true});
+    const blob=new Blob([bytes],{type:mime});
+    const path=`receipts/${id}.${ext}`;
+    const {error}=await sbClient.storage.from('receipts').upload(path,blob,{contentType:mime,upsert:true});
     if(error)throw error;
     const {data}=sbClient.storage.from('receipts').getPublicUrl(path);
     return data.publicUrl;
@@ -1507,7 +1578,7 @@ async function deleteFromSupabase(id){
   setSyncStatus('syncing');
   try{
     // Also remove receipt from storage
-    await sbClient.storage.from('receipts').remove([`receipts/${id}.jpg`]);
+    await sbClient.storage.from('receipts').remove([`receipts/${id}.jpg`,`receipts/${id}.pdf`]);
     const {error}=await sbClient.from('expenses').delete().eq('id',id);
     if(error)throw error;
     expenses=expenses.filter(e=>e.id!==id);
