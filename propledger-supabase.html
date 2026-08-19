@@ -1233,6 +1233,14 @@ function renderYearBar(){
   });
 }
 
+// Bar labels: two decimals in thousands once past $1k, whole dollars
+// below that. No dollar sign — twelve of them would crowd the column.
+function barLabel(v){
+  if(v<=0)return '';
+  if(v>=1e6)return (v/1e6).toFixed(2)+'m';
+  if(v>=1000)return (v/1000).toFixed(2)+'k';
+  return String(Math.round(v));
+}
 const MONTH_INITIALS='JFMAMJJASOND';
 const MONTH_NAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
@@ -1240,7 +1248,7 @@ const MONTH_NAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','
 // Segments stack: each sits on the running total of the ones before it.
 function buildCumSvg(series,peak,height,lastMonth){
   const NS='http://www.w3.org/2000/svg';
-  const W=360,H=height||170,L=38,R=354,TOP=12,BOT=H-32;
+  const W=360,H=height||170,L=38,R=354,TOP=22,BOT=H-32;
   const svg=document.createElementNS(NS,'svg');
   svg.setAttribute('viewBox','0 0 '+W+' '+H);
   svg.setAttribute('class','chart-svg');
@@ -1292,6 +1300,19 @@ function buildCumSvg(series,peak,height,lastMonth){
       svg.appendChild(r);
       base+=v;                        // stack on top, not from zero
     });
+    // Running total for this month, above the stack
+    if(m<=stopAt&&base>0){
+      const cap=document.createElementNS(NS,'text');
+      cap.setAttribute('x',x+barW/2);
+      cap.setAttribute('y',yOf(base)-3.5);
+      cap.setAttribute('text-anchor','middle');
+      cap.setAttribute('font-size','6.2');
+      cap.setAttribute('font-family','DM Sans, sans-serif');
+      cap.setAttribute('font-weight','600');
+      cap.setAttribute('fill','#0a0a0f');
+      cap.textContent=barLabel(base);
+      svg.appendChild(cap);
+    }
     const lbl=document.createElementNS(NS,'text');
     lbl.setAttribute('x',x+barW/2);lbl.setAttribute('y',BOT+12);
     lbl.setAttribute('text-anchor','middle');
