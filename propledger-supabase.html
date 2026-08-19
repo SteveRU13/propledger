@@ -1190,6 +1190,19 @@ function yearsWithData(){
 }
 function expensesIn(year){ return expenses.filter(e=>expYear(e)===year); }
 
+// The last month worth drawing. A finished year shows all twelve; the
+// current year stops at today, so months that have not begun stay empty.
+// If something is dated ahead (a prepaid bill, say) the chart extends to
+// it rather than hiding real money.
+function lastVisibleMonth(year){
+  const now=new Date(), cy=now.getFullYear(), cm=now.getMonth();
+  let lastData=-1;
+  expensesIn(year).forEach(e=>{const m=expMonth(e);if(m>lastData)lastData=m;});
+  if(year<cy) return 11;                     // completed year
+  if(year>cy) return Math.max(lastData,0);   // wholly in the future
+  return Math.max(cm,lastData);              // this year
+}
+
 // {buildingId: [12 running totals]}
 function cumulativeByBuilding(year){
   const out={};
@@ -1225,7 +1238,7 @@ const MONTH_NAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','
 
 // Build one cumulative bar chart. `series` is [{label,color,vals[12]}].
 // Segments stack: each sits on the running total of the ones before it.
-function buildCumSvg(series,peak,height){
+function buildCumSvg(series,peak,height,lastMonth){
   const NS='http://www.w3.org/2000/svg';
   const W=360,H=height||170,L=38,R=354,TOP=12,BOT=H-32;
   const svg=document.createElementNS(NS,'svg');
@@ -1257,10 +1270,13 @@ function buildCumSvg(series,peak,height){
   });
 
   const nowY=new Date().getFullYear(), nowM=new Date().getMonth();
+  const stopAt=(lastMonth==null)?11:lastMonth;
   for(let m=0;m<12;m++){
     const x=L+m*colW+(colW-barW)/2;
     let base=0;                       // running height of the stack so far
-    series.forEach(s=>{
+    // Months that have not begun are left blank — the running total is
+    // carried forward internally, it just is not drawn yet.
+    if(m<=stopAt) series.forEach(s=>{
       const v=s.vals[m];
       if(v<=0)return;
       const y0=yOf(base), y1=yOf(base+v);
@@ -1282,7 +1298,8 @@ function buildCumSvg(series,peak,height){
     lbl.setAttribute('font-size','7.5');
     lbl.setAttribute('font-family','DM Sans, sans-serif');
     const isNow=(sumYear===nowY&&m===nowM);
-    lbl.setAttribute('fill',isNow?'#0a0a0f':'#6b7280');
+    const future=m>stopAt;
+    lbl.setAttribute('fill',isNow?'#0a0a0f':future?'#c4bfb6':'#6b7280');
     lbl.setAttribute('font-weight',isNow?'700':'400');
     lbl.textContent=MONTH_INITIALS[m];
     svg.appendChild(lbl);
@@ -1320,6 +1337,8 @@ function renderCumChart(){
   const cum=cumulativeByBuilding(sumYear);
   const blds=getBuildings().filter(b=>cum[b.id]&&cum[b.id][11]>0);
   const yearTotal=blds.reduce((s,b)=>s+cum[b.id][11],0);
+  const lastM=lastVisibleMonth(sumYear);
+  const partYear=lastM<11;
 
   if(!blds.length){
     const e=document.createElement('div');e.className='empty-state';
@@ -1334,8 +1353,11 @@ function renderCumChart(){
     .map(b=>({label:b.label,color:b.color,amount:fmt(cum[b.id][11])}));
   host.appendChild(chartCard(
     'All properties · '+sumYear, fmt(yearTotal),
-    'Each bar adds to the one before it, stacked by property. December is the year total.',
-    buildCumSvg(series,Math.max(yearTotal,1),170), key));
+    partYear
+      ? 'Each bar adds to the one before it, stacked by property. '+
+        MONTH_NAMES[lastM]+' is the year so far.'
+      : 'Each bar adds to the one before it, stacked by property. December is the year total.',
+    buildCumSvg(series,Math.max(yearTotal,1),170,lastM), key));
 
   // ── one per property ──
   if(blds.length>1){
@@ -1356,8 +1378,9 @@ function renderCumChart(){
       const nEnt=expensesIn(sumYear).filter(e=>e.building===b.id).length;
       host.appendChild(chartCard(
         b.label, fmt(cum[b.id][11]),
-        share+'% of the year · '+nEnt+' expense'+(nEnt!==1?'s':''),
-        buildCumSvg([{label:b.label,color:b.color,vals:cum[b.id]}],biggest,130),
+        share+'% of '+(partYear?'the year so far':'the year')+
+          ' · '+nEnt+' expense'+(nEnt!==1?'s':''),
+        buildCumSvg([{label:b.label,color:b.color,vals:cum[b.id]}],biggest,130,lastM),
         null));
     });
   }
