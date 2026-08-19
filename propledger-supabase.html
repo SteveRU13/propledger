@@ -135,6 +135,25 @@
   .month-cell{background:var(--card);border:1px solid var(--border);border-radius:8px;padding:8px 4px;text-align:center}
   .mc-name{font-size:.68rem;color:var(--mid);text-transform:uppercase;letter-spacing:.05em}
   .mc-val{font-family:'DM Serif Display',serif;font-size:.88rem;color:var(--ink);margin-top:2px}
+.year-bar{display:flex;gap:8px;overflow-x:auto;padding-bottom:4px;margin-bottom:14px;scrollbar-width:none}
+  .year-bar::-webkit-scrollbar{display:none}
+  .year-chip{flex-shrink:0;padding:6px 14px;border:1.5px solid var(--border);border-radius:20px;
+    background:var(--card);font-size:.76rem;font-weight:600;cursor:pointer;color:var(--mid);
+    font-family:'DM Sans',sans-serif;transition:all .15s;min-height:34px}
+  .year-chip.active{background:var(--ink);border-color:var(--ink);color:var(--gold)}
+  .chart-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);
+    box-shadow:var(--shadow);padding:14px 12px 10px;margin-bottom:14px}
+  .chart-head{display:flex;align-items:baseline;justify-content:space-between;
+    gap:8px;margin-bottom:2px;padding:0 2px}
+  .chart-title{font-family:'DM Serif Display',serif;font-size:1rem;color:var(--ink)}
+  .chart-total{font-family:'DM Serif Display',serif;font-size:1.05rem;color:var(--ink);white-space:nowrap}
+  .chart-note{font-size:.68rem;color:var(--mid);padding:0 2px 8px}
+  .chart-svg{width:100%;height:auto;display:block}
+  .chart-key{display:flex;flex-wrap:wrap;gap:6px 14px;padding:10px 2px 2px;
+    border-top:1px solid var(--border);margin-top:8px}
+  .key-item{display:flex;align-items:center;gap:6px;font-size:.72rem;color:var(--mid)}
+  .key-dot{width:9px;height:9px;border-radius:2px;flex-shrink:0}
+  .key-amt{font-weight:600;color:var(--ink)}
   .scrollable{padding-bottom:90px}
   .bld-name-row{display:flex;align-items:center;gap:10px;margin-bottom:12px}
   .bld-name-swatch{width:14px;height:14px;border-radius:50%;flex-shrink:0}
@@ -368,14 +387,17 @@
 </div>
 
 <div id="screen-summary" class="screen scrollable">
+  <div class="year-bar" id="year-bar"></div>
   <div class="summary-grid" id="summary-grid"></div>
-  <div class="section-title">Monthly Breakdown</div>
+  <div class="section-title">Spending Through the Year</div>
+  <div id="cum-chart"></div>
+  <div class="section-title">Month by Month</div>
   <div class="month-grid" id="month-grid"></div>
   <div class="section-title">By Building</div>
   <div id="bld-summary"></div>
   <div class="export-card">
     <h3>Tax Export</h3>
-    <p>Download expense data for your accountant or tax return</p>
+    <p id="export-blurb">Download expense data for your accountant or tax return</p>
     <div class="export-btns" id="export-btns"></div>
   </div>
 </div>
@@ -1072,8 +1094,12 @@ document.getElementById('lightbox').addEventListener('click',function(e){if(e.ta
 
 // ── Summary ───────────────────────────────────────────────────────────────────
 function renderSummary(){
-  const total=expenses.reduce((s,e)=>s+e.amount,0);
-  const withRec=expenses.filter(e=>e.receipt).length;
+  // Default to the most recent year that has entries
+  if(sumYear===null||!yearsWithData().includes(sumYear))sumYear=yearsWithData()[0];
+  renderYearBar();
+  const inYear=expensesIn(sumYear);
+  const total=inYear.reduce((s,e)=>s+e.amount,0);
+  const withRec=inYear.filter(e=>e.receipt).length;
   const grid=document.getElementById('summary-grid');
   grid.innerHTML='';
   const mkCard=(gold,label,val,sub)=>{
@@ -1083,17 +1109,20 @@ function renderSummary(){
     const s=document.createElement('div');s.className='sum-sub';setText(s,sub);
     c.append(l,v,s);return c;
   };
-  grid.appendChild(mkCard(true,'Combined Total',fmtShort(total),expenses.length+' expenses'));
+  grid.appendChild(mkCard(true,sumYear+' Total',fmtShort(total),inYear.length+' expenses'));
   grid.appendChild(mkCard(false,'With Receipts',withRec,'documented'));
   BUILDINGS.forEach(b=>{
-    const bExp=expenses.filter(e=>e.building===b.id);
+    const bExp=inYear.filter(e=>e.building===b.id);
     grid.appendChild(mkCard(false,b.label,fmtShort(bExp.reduce((s,e)=>s+e.amount,0)),bExp.length+' items'));
   });
+
+  renderCumChart();
 
   // Monthly
   const MONTHS=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   const monthly=Array(12).fill(0);
-  expenses.forEach(e=>{monthly[new Date(e.date+'T12:00:00').getMonth()]+=e.amount;});
+  // Scoped to the selected year — previously every January was added together
+  inYear.forEach(e=>{const m=expMonth(e);if(m>=0&&m<12)monthly[m]+=e.amount;});
   const mg=document.getElementById('month-grid');mg.innerHTML='';
   MONTHS.forEach((m,i)=>{
     const cell=document.createElement('div');cell.className='month-cell';
@@ -1105,7 +1134,7 @@ function renderSummary(){
   // By building
   const bc=document.getElementById('bld-summary');bc.innerHTML='';
   BUILDINGS.forEach(b=>{
-    const bExp=expenses.filter(e=>e.building===b.id);
+    const bExp=inYear.filter(e=>e.building===b.id);
     const bTotal=bExp.reduce((s,e)=>s+e.amount,0);
     const groups={};
     bExp.forEach(e=>{if(!groups[e.group])groups[e.group]={total:0,count:0};groups[e.group].total+=e.amount;groups[e.group].count++;});
@@ -1135,11 +1164,185 @@ function renderSummary(){
   });
 
   // Export buttons
+  const blurb=document.getElementById('export-blurb');
+  if(blurb)setText(blurb,'Exports the '+sumYear+' tax year shown above.');
   const eb=document.getElementById('export-btns');eb.innerHTML='';
-  [{label:'⬇ All Buildings CSV',bld:0,cls:'gold-e'},...BUILDINGS.map(b=>({label:'⬇ '+b.label+' CSV',bld:b.id,cls:'sage-e'}))].forEach(({label,bld,cls})=>{
+  [{label:'⬇ All Buildings · '+sumYear,bld:0,cls:'gold-e'},...BUILDINGS.map(b=>({label:'⬇ '+b.label+' · '+sumYear,bld:b.id,cls:'sage-e'}))].forEach(({label,bld,cls})=>{
     const btn=document.createElement('button');btn.className='btn-export '+cls;setText(btn,label);
     btn.addEventListener('click',()=>exportCSV(bld));eb.appendChild(btn);
   });
+}
+
+
+// ══ CUMULATIVE SPEND CHART ═══════════════════════════════════════════
+// Each bar is the running total from January to that month, stacked by
+// property. December therefore equals the year's total. The running
+// total restarts every January, so tax years never bleed together.
+let sumYear=null;   // set on first render to the most recent year with data
+
+const expYear=e=>parseInt(String(e.date).slice(0,4),10);
+const expMonth=e=>parseInt(String(e.date).slice(5,7),10)-1;
+
+function yearsWithData(){
+  const s=new Set(expenses.map(expYear).filter(Number.isFinite));
+  s.add(new Date().getFullYear());
+  return [...s].sort((a,b)=>b-a);
+}
+function expensesIn(year){ return expenses.filter(e=>expYear(e)===year); }
+
+// {buildingId: [12 running totals]}
+function cumulativeByBuilding(year){
+  const out={};
+  getBuildings().forEach(b=>{out[b.id]=Array(12).fill(0);});
+  expensesIn(year).forEach(e=>{
+    if(!out[e.building])out[e.building]=Array(12).fill(0);
+    const m=expMonth(e);
+    if(m>=0&&m<12)out[e.building][m]+=e.amount;
+  });
+  Object.keys(out).forEach(k=>{
+    let run=0;
+    out[k]=out[k].map(v=>{run+=v;return Math.round(run*100)/100;});
+  });
+  return out;
+}
+
+function renderYearBar(){
+  const bar=document.getElementById('year-bar');
+  if(!bar)return;
+  bar.innerHTML='';
+  yearsWithData().forEach(y=>{
+    const b=document.createElement('button');
+    b.type='button';
+    b.className='year-chip'+(y===sumYear?' active':'');
+    setText(b,String(y));
+    b.addEventListener('click',()=>{sumYear=y;renderSummary();});
+    bar.appendChild(b);
+  });
+}
+
+function renderCumChart(){
+  const host=document.getElementById('cum-chart');
+  if(!host)return;
+  host.innerHTML='';
+
+  const cum=cumulativeByBuilding(sumYear);
+  const blds=getBuildings().filter(b=>cum[b.id]&&cum[b.id][11]>0);
+  const yearTotal=blds.reduce((s,b)=>s+cum[b.id][11],0);
+
+  if(!blds.length){
+    const e=document.createElement('div');
+    e.className='empty-state';
+    e.innerHTML='<div class="es-icon">📊</div>';
+    const p=document.createElement('p');
+    setText(p,'Nothing recorded for '+sumYear+' yet.');
+    e.appendChild(p);
+    host.appendChild(e);
+    return;
+  }
+
+  const card=document.createElement('div');
+  card.className='chart-card';
+
+  const head=document.createElement('div');
+  head.className='chart-head';
+  const t=document.createElement('div');t.className='chart-title';
+  setText(t,'Running total · '+sumYear);
+  const tot=document.createElement('div');tot.className='chart-total';
+  setText(tot,fmt(yearTotal));
+  head.append(t,tot);
+  card.appendChild(head);
+
+  const note=document.createElement('div');
+  note.className='chart-note';
+  setText(note,'Each bar adds to the one before it. Resets every January.');
+  card.appendChild(note);
+
+  // ── SVG ──
+  const NS='http://www.w3.org/2000/svg';
+  const W=360,H=170,L=38,R=354,TOP=12,BOT=138;
+  const svg=document.createElementNS(NS,'svg');
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);
+  svg.setAttribute('class','chart-svg');
+  svg.setAttribute('role','img');
+  svg.setAttribute('aria-label','Cumulative expenses by month for '+sumYear);
+
+  const peak=Math.max(yearTotal,1);
+  const plotW=R-L, colW=plotW/12, barW=Math.min(19,colW-8);
+
+  // gridlines with value labels
+  [0,.25,.5,.75,1].forEach(f=>{
+    const y=BOT-f*(BOT-TOP);
+    const ln=document.createElementNS(NS,'line');
+    ln.setAttribute('x1',L);ln.setAttribute('x2',R);
+    ln.setAttribute('y1',y);ln.setAttribute('y2',y);
+    ln.setAttribute('stroke','#d4cfc6');
+    ln.setAttribute('stroke-width',f===0?1:.5);
+    if(f>0)ln.setAttribute('stroke-dasharray','2 3');
+    svg.appendChild(ln);
+    if(f>0){
+      const tx=document.createElementNS(NS,'text');
+      tx.setAttribute('x',L-5);tx.setAttribute('y',y+3);
+      tx.setAttribute('text-anchor','end');
+      tx.setAttribute('font-size','7');tx.setAttribute('fill','#6b7280');
+      tx.setAttribute('font-family','DM Sans, sans-serif');
+      tx.textContent=fmtShort(peak*f);
+      svg.appendChild(tx);
+    }
+  });
+
+  // stacked bars
+  const nowY=new Date().getFullYear(), nowM=new Date().getMonth();
+  for(let m=0;m<12;m++){
+    const x=L+m*colW+(colW-barW)/2;
+    let base=0;
+    blds.forEach(b=>{
+      const v=cum[b.id][m];
+      if(v<=0)return;
+      const h=(v/peak)*(BOT-TOP);
+      const prevH=(base/peak)*(BOT-TOP);
+      const segH=h-prevH;
+      if(segH<=0)return;
+      const r=document.createElementNS(NS,'rect');
+      r.setAttribute('x',x);
+      r.setAttribute('y',BOT-h);
+      r.setAttribute('width',barW);
+      r.setAttribute('height',segH);
+      r.setAttribute('fill',b.color);
+      const ttl=document.createElementNS(NS,'title');
+      ttl.textContent=b.label+' · to '+['Jan','Feb','Mar','Apr','May','Jun',
+        'Jul','Aug','Sep','Oct','Nov','Dec'][m]+' · '+fmt(v);
+      r.appendChild(ttl);
+      svg.appendChild(r);
+      base=v;
+    });
+    // month initial, current month emphasised
+    const lbl=document.createElementNS(NS,'text');
+    lbl.setAttribute('x',x+barW/2);lbl.setAttribute('y',BOT+12);
+    lbl.setAttribute('text-anchor','middle');
+    lbl.setAttribute('font-size','7.5');
+    lbl.setAttribute('font-family','DM Sans, sans-serif');
+    const isNow=(sumYear===nowY&&m===nowM);
+    lbl.setAttribute('fill',isNow?'#0a0a0f':'#6b7280');
+    lbl.setAttribute('font-weight',isNow?'700':'400');
+    lbl.textContent='JFMAMJJASOND'[m];
+    svg.appendChild(lbl);
+  }
+  card.appendChild(svg);
+
+  // legend, biggest spender first
+  const key=document.createElement('div');
+  key.className='chart-key';
+  [...blds].sort((a,b)=>cum[b.id][11]-cum[a.id][11]).forEach(b=>{
+    const it=document.createElement('div');it.className='key-item';
+    const d=document.createElement('span');d.className='key-dot';
+    d.style.background=b.color;
+    const n=document.createElement('span');setText(n,b.label);
+    const a=document.createElement('span');a.className='key-amt';
+    setText(a,fmt(cum[b.id][11]));
+    it.append(d,n,a);key.appendChild(it);
+  });
+  card.appendChild(key);
+  host.appendChild(card);
 }
 
 // ── CSV export (properly escaped) ─────────────────────────────────────────────
@@ -1148,8 +1351,10 @@ function csvCell(v){
   return s.includes(',')||s.includes('"')||s.includes('\n')?'"'+s.replace(/"/g,'""')+'"':s;
 }
 function exportCSV(bld){
-  const data=bld?expenses.filter(e=>e.building===bld):expenses;
-  if(!data.length){showToast('No data to export');return;}
+  // Exports the year shown on screen, which is what a tax return needs
+  const scoped=expensesIn(sumYear);
+  const data=bld?scoped.filter(e=>e.building===bld):scoped;
+  if(!data.length){showToast('Nothing to export for '+sumYear);return;}
   const rows=[['Date','Building','Category','Group','Amount','Description','Notes','Has Receipt']];
   data.forEach(e=>{
     const bInfo=BUILDINGS.find(b=>b.id===e.building);
@@ -1159,7 +1364,7 @@ function exportCSV(bld){
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
   const url=URL.createObjectURL(blob);
   const a=document.createElement('a');
-  a.href=url;a.download=(bld?'expenses_building'+bld:'expenses_all')+'_'+today()+'.csv';
+  a.href=url;a.download=(bld?'expenses_building'+bld:'expenses_all')+'_'+sumYear+'.csv';
   document.body.appendChild(a);a.click();
   setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},100);
   exportedThisSession=true;
@@ -1828,6 +2033,20 @@ function subscribeRealtime(){
         renderExpenses(); renderSummary(); buildCatFilter();
         showToast('↓ New entry synced from another device');
       }
+    })
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'expenses'},payload=>{
+      // An edit made on another device. Replace in place rather than
+      // prepending, so the entry keeps its position in the list.
+      const row=payload.new;
+      const i=expenses.findIndex(e=>e.id===row.id);
+      if(i<0)return;                     // not one we are holding
+      expenses[i]={id:row.id,building:row.building,category:row.category,
+        group:row.grp,amount:parseFloat(row.amount),date:row.date,
+        description:row.description||'',notes:row.notes||'',
+        receipt:row.receipt_url||null};
+      // No toast here: Supabase echoes your own writes back, so this fires
+      // on the device that made the edit too.
+      renderExpenses(); renderSummary(); buildCatFilter();
     })
     .on('postgres_changes',{event:'DELETE',schema:'public',table:'expenses'},payload=>{
       expenses=expenses.filter(e=>e.id!==payload.old.id);
