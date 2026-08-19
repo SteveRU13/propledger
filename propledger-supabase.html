@@ -1220,58 +1220,24 @@ function renderYearBar(){
   });
 }
 
-function renderCumChart(){
-  const host=document.getElementById('cum-chart');
-  if(!host)return;
-  host.innerHTML='';
+const MONTH_INITIALS='JFMAMJJASOND';
+const MONTH_NAMES=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
-  const cum=cumulativeByBuilding(sumYear);
-  const blds=getBuildings().filter(b=>cum[b.id]&&cum[b.id][11]>0);
-  const yearTotal=blds.reduce((s,b)=>s+cum[b.id][11],0);
-
-  if(!blds.length){
-    const e=document.createElement('div');
-    e.className='empty-state';
-    e.innerHTML='<div class="es-icon">📊</div>';
-    const p=document.createElement('p');
-    setText(p,'Nothing recorded for '+sumYear+' yet.');
-    e.appendChild(p);
-    host.appendChild(e);
-    return;
-  }
-
-  const card=document.createElement('div');
-  card.className='chart-card';
-
-  const head=document.createElement('div');
-  head.className='chart-head';
-  const t=document.createElement('div');t.className='chart-title';
-  setText(t,'Running total · '+sumYear);
-  const tot=document.createElement('div');tot.className='chart-total';
-  setText(tot,fmt(yearTotal));
-  head.append(t,tot);
-  card.appendChild(head);
-
-  const note=document.createElement('div');
-  note.className='chart-note';
-  setText(note,'Each bar adds to the one before it. Resets every January.');
-  card.appendChild(note);
-
-  // ── SVG ──
+// Build one cumulative bar chart. `series` is [{label,color,vals[12]}].
+// Segments stack: each sits on the running total of the ones before it.
+function buildCumSvg(series,peak,height){
   const NS='http://www.w3.org/2000/svg';
-  const W=360,H=170,L=38,R=354,TOP=12,BOT=138;
+  const W=360,H=height||170,L=38,R=354,TOP=12,BOT=H-32;
   const svg=document.createElementNS(NS,'svg');
   svg.setAttribute('viewBox','0 0 '+W+' '+H);
   svg.setAttribute('class','chart-svg');
   svg.setAttribute('role','img');
-  svg.setAttribute('aria-label','Cumulative expenses by month for '+sumYear);
+  const plotH=BOT-TOP, plotW=R-L, colW=plotW/12;
+  const barW=Math.min(19,colW-8);
+  const yOf=v=>BOT-(v/peak)*plotH;
 
-  const peak=Math.max(yearTotal,1);
-  const plotW=R-L, colW=plotW/12, barW=Math.min(19,colW-8);
-
-  // gridlines with value labels
   [0,.25,.5,.75,1].forEach(f=>{
-    const y=BOT-f*(BOT-TOP);
+    const y=BOT-f*plotH;
     const ln=document.createElementNS(NS,'line');
     ln.setAttribute('x1',L);ln.setAttribute('x2',R);
     ln.setAttribute('y1',y);ln.setAttribute('y2',y);
@@ -1290,32 +1256,26 @@ function renderCumChart(){
     }
   });
 
-  // stacked bars
   const nowY=new Date().getFullYear(), nowM=new Date().getMonth();
   for(let m=0;m<12;m++){
     const x=L+m*colW+(colW-barW)/2;
-    let base=0;
-    blds.forEach(b=>{
-      const v=cum[b.id][m];
+    let base=0;                       // running height of the stack so far
+    series.forEach(s=>{
+      const v=s.vals[m];
       if(v<=0)return;
-      const h=(v/peak)*(BOT-TOP);
-      const prevH=(base/peak)*(BOT-TOP);
-      const segH=h-prevH;
-      if(segH<=0)return;
+      const y0=yOf(base), y1=yOf(base+v);
+      const segH=y0-y1;
+      if(segH<=0.2)return;            // too thin to see
       const r=document.createElementNS(NS,'rect');
-      r.setAttribute('x',x);
-      r.setAttribute('y',BOT-h);
-      r.setAttribute('width',barW);
-      r.setAttribute('height',segH);
-      r.setAttribute('fill',b.color);
-      const ttl=document.createElementNS(NS,'title');
-      ttl.textContent=b.label+' · to '+['Jan','Feb','Mar','Apr','May','Jun',
-        'Jul','Aug','Sep','Oct','Nov','Dec'][m]+' · '+fmt(v);
-      r.appendChild(ttl);
+      r.setAttribute('x',x);r.setAttribute('y',y1);
+      r.setAttribute('width',barW);r.setAttribute('height',segH);
+      r.setAttribute('fill',s.color);
+      const t=document.createElementNS(NS,'title');
+      t.textContent=s.label+' · to '+MONTH_NAMES[m]+' · '+fmt(v);
+      r.appendChild(t);
       svg.appendChild(r);
-      base=v;
+      base+=v;                        // stack on top, not from zero
     });
-    // month initial, current month emphasised
     const lbl=document.createElementNS(NS,'text');
     lbl.setAttribute('x',x+barW/2);lbl.setAttribute('y',BOT+12);
     lbl.setAttribute('text-anchor','middle');
@@ -1324,25 +1284,83 @@ function renderCumChart(){
     const isNow=(sumYear===nowY&&m===nowM);
     lbl.setAttribute('fill',isNow?'#0a0a0f':'#6b7280');
     lbl.setAttribute('font-weight',isNow?'700':'400');
-    lbl.textContent='JFMAMJJASOND'[m];
+    lbl.textContent=MONTH_INITIALS[m];
     svg.appendChild(lbl);
   }
-  card.appendChild(svg);
+  return svg;
+}
 
-  // legend, biggest spender first
-  const key=document.createElement('div');
-  key.className='chart-key';
-  [...blds].sort((a,b)=>cum[b.id][11]-cum[a.id][11]).forEach(b=>{
-    const it=document.createElement('div');it.className='key-item';
-    const d=document.createElement('span');d.className='key-dot';
-    d.style.background=b.color;
-    const n=document.createElement('span');setText(n,b.label);
-    const a=document.createElement('span');a.className='key-amt';
-    setText(a,fmt(cum[b.id][11]));
-    it.append(d,n,a);key.appendChild(it);
-  });
-  card.appendChild(key);
-  host.appendChild(card);
+function chartCard(title,total,note,svg,keyRows){
+  const card=document.createElement('div');card.className='chart-card';
+  const head=document.createElement('div');head.className='chart-head';
+  const t=document.createElement('div');t.className='chart-title';setText(t,title);
+  const v=document.createElement('div');v.className='chart-total';setText(v,total);
+  head.append(t,v);card.appendChild(head);
+  if(note){const n=document.createElement('div');n.className='chart-note';setText(n,note);card.appendChild(n);}
+  card.appendChild(svg);
+  if(keyRows&&keyRows.length){
+    const key=document.createElement('div');key.className='chart-key';
+    keyRows.forEach(k=>{
+      const it=document.createElement('div');it.className='key-item';
+      const d=document.createElement('span');d.className='key-dot';d.style.background=k.color;
+      const n=document.createElement('span');setText(n,k.label);
+      const a=document.createElement('span');a.className='key-amt';setText(a,k.amount);
+      it.append(d,n,a);key.appendChild(it);
+    });
+    card.appendChild(key);
+  }
+  return card;
+}
+
+function renderCumChart(){
+  const host=document.getElementById('cum-chart');
+  if(!host)return;
+  host.innerHTML='';
+
+  const cum=cumulativeByBuilding(sumYear);
+  const blds=getBuildings().filter(b=>cum[b.id]&&cum[b.id][11]>0);
+  const yearTotal=blds.reduce((s,b)=>s+cum[b.id][11],0);
+
+  if(!blds.length){
+    const e=document.createElement('div');e.className='empty-state';
+    e.innerHTML='<div class="es-icon">📊</div>';
+    const p=document.createElement('p');setText(p,'Nothing recorded for '+sumYear+' yet.');
+    e.appendChild(p);host.appendChild(e);return;
+  }
+
+  // ── combined, stacked by property ──
+  const series=blds.map(b=>({label:b.label,color:b.color,vals:cum[b.id]}));
+  const key=[...blds].sort((a,b)=>cum[b.id][11]-cum[a.id][11])
+    .map(b=>({label:b.label,color:b.color,amount:fmt(cum[b.id][11])}));
+  host.appendChild(chartCard(
+    'All properties · '+sumYear, fmt(yearTotal),
+    'Each bar adds to the one before it, stacked by property. December is the year total.',
+    buildCumSvg(series,Math.max(yearTotal,1),170), key));
+
+  // ── one per property ──
+  if(blds.length>1){
+    const hd=document.createElement('div');
+    hd.className='section-title';
+    setText(hd,'Each Property');
+    host.appendChild(hd);
+
+    // Shared scale so the buildings can be compared against each other
+    const biggest=Math.max(...blds.map(b=>cum[b.id][11]),1);
+    const note=document.createElement('div');
+    note.style.cssText='font-size:.7rem;color:var(--mid);margin:-4px 0 10px';
+    setText(note,'All on the same scale, so heights are directly comparable.');
+    host.appendChild(note);
+
+    [...blds].sort((a,b)=>cum[b.id][11]-cum[a.id][11]).forEach(b=>{
+      const share=yearTotal>0?Math.round(cum[b.id][11]/yearTotal*100):0;
+      const nEnt=expensesIn(sumYear).filter(e=>e.building===b.id).length;
+      host.appendChild(chartCard(
+        b.label, fmt(cum[b.id][11]),
+        share+'% of the year · '+nEnt+' expense'+(nEnt!==1?'s':''),
+        buildCumSvg([{label:b.label,color:b.color,vals:cum[b.id]}],biggest,130),
+        null));
+    });
+  }
 }
 
 // ── CSV export (properly escaped) ─────────────────────────────────────────────
