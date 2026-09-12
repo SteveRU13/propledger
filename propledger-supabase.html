@@ -635,6 +635,22 @@
     <div class="rev-banner-t">Mortgages</div>
     <div class="rev-banner-s">Set the terms once. Interest posts itself each month.</div>
   </div>
+  <div class="rev-setup-warn" id="mort-setup-warn">
+    <strong style="color:var(--rust)">Mortgage terms are not syncing yet.</strong>
+    They are saved on this device only, so other devices will not see them.
+    Run the SQL below in Supabase (SQL Editor), then reopen this tab.
+    <div id="mort-sql-box" style="font-family:monospace;font-size:.68rem;background:#0d0d14;
+      color:#a8d8a8;padding:10px;border-radius:6px;margin-top:8px;white-space:pre-wrap;
+      word-break:break-word;max-height:200px;overflow:auto"></div>
+    <button type="button" id="copy-mort-sql-btn"
+      style="margin-top:8px;background:var(--sage);border:none;color:#fff;
+      font-family:'DM Sans',sans-serif;font-size:.74rem;font-weight:600;padding:8px 14px;
+      border-radius:6px;cursor:pointer;min-height:36px">Copy SQL</button>
+    <button type="button" id="mort-recheck-btn"
+      style="margin-top:8px;margin-left:8px;background:var(--rust);border:none;color:#fff;
+      font-family:'DM Sans',sans-serif;font-size:.74rem;font-weight:600;padding:8px 14px;
+      border-radius:6px;cursor:pointer;min-height:36px">Check again</button>
+  </div>
   <div id="mortgage-panel"></div>
   <div class="section-title">Amortisation Schedule</div>
   <div class="rev-field-label">Property</div>
@@ -2923,6 +2939,24 @@ function closeEditIncomeModal(){
 }
 
 // ── load + realtime ────────────────────────────────────────────────
+const MORTGAGE_SQL = `-- Syncs mortgage terms across your devices.
+create table if not exists mortgages (
+  building    int primary key,
+  amount      numeric(14,2) not null,
+  rate        numeric(6,3)  not null,
+  years       numeric(5,2)  not null,
+  start_date  date          not null,
+  comp        text          not null default 'monthly',
+  active      boolean       not null default true,
+  updated_at  timestamptz   default now()
+);
+alter table mortgages enable row level security;
+drop policy if exists "allow all" on mortgages;
+create policy "allow all" on mortgages for all using (true) with check (true);
+-- Grants are separate from RLS; without them every request fails with 42501.
+grant usage on schema public to anon, authenticated;
+grant all on table mortgages to anon, authenticated;`;
+
 const GRANT_SQL='grant usage on schema public to anon, authenticated;\n'+
                 'grant all on table income to anon, authenticated;';
 let incomeProbeError=null;
@@ -2976,8 +3010,13 @@ function subscribeIncomeRealtime(){
    shown in the panel instead.
    ═══════════════════════════════════════════════════════════════════ */
 const MORT_KEY='propledger_mortgages';
+// Terms live in Supabase so every device sees the same setup. The local
+// copy is kept as a cache and as a fallback for when the table has not
+// been created yet.
+let mortCache=null;               // null until loaded from the database
+let mortTableMissing=false;
 
-function loadMortgages(){
+function localMortgages(){
   try{
     const raw=localStorage.getItem(MORT_KEY);
     if(!raw)return {};
@@ -2985,9 +3024,73 @@ function loadMortgages(){
     return (p&&typeof p==='object')?p:{};
   }catch{ return {}; }
 }
+function loadMortgages(){
+  return (mortCache&&!mortTableMissing) ? mortCache : localMortgages();
+}
+function cacheMortgagesLocally(m){
+  try{ localStorage.setItem(MORT_KEY,JSON.stringify(m)); }catch{}
+}
 function saveMortgages(m){
-  try{ localStorage.setItem(MORT_KEY,JSON.stringify(m)); return true; }
-  catch{ showToast('\u26a0 Could not save mortgage settings'); return false; }
+  if(mortCache&&!mortTableMissing)mortCache=m;
+  cacheMortgagesLocally(m);
+  return true;
+}
+
+async function loadMortgagesFromSupabase(){
+  if(!sbClient)return;
+  try{
+    const {data,error}=await sbClient.from('mortgages').select('*');
+    if(error){
+      mortTableMissing = error.code!=='PGRST116';
+      if(mortTableMissing)return;
+    }
+    mortTableMissing=false;
+    const m={};
+    (data||[]).forEach(r=>{
+      m[String(r.building)]={active:!!r.active,amount:parseFloat(r.amount),
+        rate:parseFloat(r.rate),years:parseFloat(r.years),
+        start:r.start_date,comp:r.comp||'monthly'};
+    });
+    // First run against a fresh table: lift anything already set up on this
+    // device so nothing is lost, then it is shared from then on.
+    const local=localMortgages();
+    for(const k of Object.keys(local)){
+      if(!m[k]&&local[k]&&local[k].active){
+        m[k]=local[k];
+        await pushMortgage(parseInt(k,10),local[k]);
+      }
+    }
+    mortCache=m;
+    cacheMortgagesLocally(m);
+  }catch{ mortTableMissing=true; }
+}
+
+async function pushMortgage(bid,cfg){
+  if(!sbClient||mortTableMissing)return false;
+  try{
+    const {error}=await sbClient.from('mortgages').upsert({
+      building:bid,amount:cfg.amount,rate:cfg.rate,years:cfg.years,
+      start_date:cfg.start,comp:cfg.comp||'monthly',active:!!cfg.active,
+      updated_at:new Date().toISOString()});
+    return !error;
+  }catch{ return false; }
+}
+async function removeMortgageRemote(bid){
+  if(!sbClient||mortTableMissing)return false;
+  try{
+    const {error}=await sbClient.from('mortgages').delete().eq('building',bid);
+    return !error;
+  }catch{ return false; }
+}
+function subscribeMortgageRealtime(){
+  if(!sbClient||mortTableMissing)return;
+  sbClient.channel('mortgage-changes')
+    .on('postgres_changes',{event:'*',schema:'public',table:'mortgages'},()=>{
+      loadMortgagesFromSupabase().then(()=>{
+        renderMortgagePanel(); renderMortgageSchedule();
+      });
+    })
+    .subscribe();
 }
 function mortgageFor(bid){ const m=loadMortgages(); return m[String(bid)]||null; }
 
@@ -3212,6 +3315,8 @@ function renderMortgageSchedule(){
 let mortEditBid=null;
 
 function renderMortgagePanel(){
+  const w=document.getElementById('mort-setup-warn');
+  if(w)w.style.display=mortTableMissing?'block':'none';
   const host=document.getElementById('mortgage-panel');
   if(!host)return;
   host.innerHTML='';
@@ -3281,7 +3386,10 @@ function renderMortgagePanel(){
   note.style.cssText='font-size:.72rem;color:var(--mid);line-height:1.6;padding:4px 2px 0';
   note.innerHTML='Interest is posted automatically each month as a <strong>Mortgage Interest</strong> '+
     'expense, and appears on the Expenses and Summary tabs. Principal is shown here but not posted \u2014 '+
-    'repaying capital is not a deductible expense. Settings are stored on this device.';
+    'repaying capital is not a deductible expense.'+
+    (mortTableMissing
+      ? ' <strong>Terms are stored on this device only</strong> \u2014 run the SQL above to share them.'
+      : ' Terms are shared across your devices.');
   host.appendChild(note);
 }
 
@@ -3366,25 +3474,30 @@ document.getElementById('mort-save-btn').addEventListener('click',async()=>{
   if(!validDate(start)){bad('err-mort-start',1);ok=false;}else bad('err-mort-start',0);
   if(!ok)return;
 
+  const cfg={active:true,amount:Math.round(amount*100)/100,rate,years,start,comp};
   const conf=loadMortgages();
-  conf[String(mortEditBid)]={active:true,amount:Math.round(amount*100)/100,
-    rate,years,start,comp};
-  if(!saveMortgages(conf))return;
+  conf[String(mortEditBid)]=cfg;
+  saveMortgages(conf);
   const btn=document.getElementById('mort-save-btn');
-  btn.textContent='Posting\u2026';btn.disabled=true;
+  btn.textContent='Saving\u2026';btn.disabled=true;
+  const bid=mortEditBid;
   closeMortgageModal();
+  const synced=await pushMortgage(bid,cfg);
+  if(!synced&&!mortTableMissing)showToast('\u26a0 Saved on this device only');
   await autoPostMortgages(netYear||new Date().getFullYear());
   btn.textContent='Save & Activate';btn.disabled=false;
   renderMortgagePanel(); renderMortgageSchedule(); renderNet();
   showToast('\u2713 Mortgage active');
 });
 
-document.getElementById('mort-remove-btn').addEventListener('click',()=>{
+document.getElementById('mort-remove-btn').addEventListener('click',async()=>{
   if(mortEditBid==null)return;
+  const bid=mortEditBid;
   const conf=loadMortgages();
-  delete conf[String(mortEditBid)];
+  delete conf[String(bid)];
   saveMortgages(conf);
   closeMortgageModal();
+  await removeMortgageRemote(bid);
   renderMortgagePanel(); renderMortgageSchedule();
   showToast('Mortgage removed \u2014 entries already posted are kept');
 });
@@ -3881,10 +3994,34 @@ document.getElementById('tab-revenue').addEventListener('click',()=>{
   // Running the SQL then opening this tab is enough to clear the warning.
   if(incomeTableMissing&&sbClient) refreshIncomeConnection();
 });
+document.getElementById('mort-sql-box').textContent=MORTGAGE_SQL;
+document.getElementById('copy-mort-sql-btn').addEventListener('click',function(){
+  const b=this;
+  navigator.clipboard.writeText(MORTGAGE_SQL).then(()=>{
+    setText(b,'Copied!');setTimeout(()=>setText(b,'Copy SQL'),1800);
+  }).catch(()=>{});
+});
+document.getElementById('mort-recheck-btn').addEventListener('click',async function(){
+  const b=this; setText(b,'Checking\u2026'); b.disabled=true;
+  await loadMortgagesFromSupabase();
+  b.disabled=false; setText(b,'Check again');
+  renderMortgagePanel(); renderMortgageSchedule();
+  showToast(mortTableMissing
+    ? '\u26a0 Still not found \u2014 check the SQL ran without error'
+    : '\u2713 Mortgage terms now syncing');
+  if(!mortTableMissing)subscribeMortgageRealtime();
+});
+
 document.getElementById('tab-mortgage').addEventListener('click',()=>{
   showTab('mortgage');
   renderMortgagePanel();
   renderMortgageSchedule();
+  if(mortTableMissing&&sbClient){
+    loadMortgagesFromSupabase().then(()=>{
+      renderMortgagePanel(); renderMortgageSchedule();
+      if(!mortTableMissing)subscribeMortgageRealtime();
+    });
+  }
   autoPostMortgages(new Date().getFullYear()).then(nPosted=>{
     if(nPosted){renderMortgagePanel();renderMortgageSchedule();}
   });
@@ -3902,7 +4039,10 @@ document.getElementById('tab-net').addEventListener('click',()=>{
 (function waitForClient(tries){
   if(typeof sbClient!=='undefined'&&sbClient){
     loadIncomeFromSupabase().then(subscribeIncomeRealtime);
-    setTimeout(()=>autoPostMortgages(new Date().getFullYear()),1500);
+    loadMortgagesFromSupabase().then(()=>{
+      subscribeMortgageRealtime();
+      return autoPostMortgages(new Date().getFullYear());
+    });
     return;
   }
   if(tries>0)setTimeout(()=>waitForClient(tries-1),400);
