@@ -154,8 +154,8 @@
   .key-item{display:flex;align-items:center;gap:6px;font-size:.72rem;color:var(--mid)}
   .key-dot{width:9px;height:9px;border-radius:2px;flex-shrink:0}
   .key-amt{font-weight:600;color:var(--ink)}
-/* ── Revenue & Net: deliberately a different visual identity from the
-      gold expense side, so you always know which ledger you are in ── */
+/* ── Revenue & Net — a separate visual identity from the gold
+      expense side, so the ledger you are in is never in doubt ── */
   .tab-btn.rev-tab{border-color:#3a5a4a;color:#7fb89a}
   .tab-btn.rev-tab.active{background:var(--sage);border-color:var(--sage);color:#fff}
   .rev-banner{background:linear-gradient(135deg,#2d6a4f,#1e4a37);border-radius:var(--r);
@@ -169,11 +169,11 @@
   .btn-revenue{width:100%;padding:14px;background:var(--sage);color:#fff;
     border:2px solid var(--sage);border-radius:10px;font-family:'DM Serif Display',serif;
     font-size:1rem;cursor:pointer;letter-spacing:.02em;transition:all .2s;margin-top:4px}
-  .btn-revenue:hover{background:#4a6a5a;border-color:#4a6a5a}
   .btn-revenue:active{transform:scale(.98)}
   .rev-item{border-left:3px solid var(--sage)}
-  .net-pos{color:#1e8449}
-  .net-neg{color:var(--rust)}
+  .rev-setup-warn{display:none;font-size:.78rem;background:#fff5f5;
+    border:1.5px solid var(--rust);border-radius:10px;padding:12px 14px;
+    margin-bottom:16px;color:var(--ink);line-height:1.6}
   .scrollable{padding-bottom:90px}
   .bld-name-row{display:flex;align-items:center;gap:10px;margin-bottom:12px}
   .bld-name-swatch{width:14px;height:14px;border-radius:50%;flex-shrink:0}
@@ -338,7 +338,7 @@
   <h1>PropLedger</h1>
   <p>Rental Expense Tracker · Synced <span class="sync-badge" id="sync-badge"><span class="sync-dot" id="sync-dot"></span><span id="sync-label">offline</span></span></p>
 </div>
-<div class="tabs" style="flex-wrap:wrap;row-gap:8px">
+<div class="tabs">
   <button class="tab-btn active" id="tab-add">＋ Add</button>
   <button class="tab-btn" id="tab-expenses">Expenses</button>
   <button class="tab-btn" id="tab-summary">Summary</button>
@@ -402,10 +402,69 @@
   </div>
 </div>
 
+<div id="screen-expenses" class="screen scrollable">
+  <div class="building-toggle" id="flt-bld-toggle"></div>
+  <div class="filter-bar" id="cat-filter-bar"></div>
+  <div id="expense-list" class="expense-list"></div>
+</div>
+
+<div id="screen-summary" class="screen scrollable">
+  <div class="year-bar" id="year-bar"></div>
+  <div class="summary-grid" id="summary-grid"></div>
+  <div class="section-title">Spending Through the Year</div>
+  <div id="cum-chart"></div>
+  <div class="section-title">Month by Month</div>
+  <div class="month-grid" id="month-grid"></div>
+  <div class="section-title">By Building</div>
+  <div id="bld-summary"></div>
+  <div class="export-card">
+    <h3>Tax Export</h3>
+    <p id="export-blurb">Download expense data for your accountant or tax return</p>
+    <div class="export-btns" id="export-btns"></div>
+  </div>
+</div>
+
+
+<!-- ══ SETTINGS SCREEN ══ -->
+<div id="screen-settings" class="screen scrollable">
+  <div class="add-form">
+    <div style="margin-bottom:16px">
+      <div style="font-family:'DM Serif Display',serif;font-size:1.2rem;color:var(--ink);margin-bottom:4px">Buildings</div>
+      <div style="font-size:.78rem;color:var(--mid)">Rename, add or remove buildings. Changes apply everywhere immediately.</div>
+    </div>
+    <div id="bld-name-fields"></div>
+    <button class="btn-primary" id="save-names-btn" type="button">Save Names</button>
+  </div>
+  <div class="add-form" style="margin-top:0">
+    <div style="font-family:'DM Serif Display',serif;font-size:1.2rem;color:var(--ink);margin-bottom:4px">Connection</div>
+    <div style="font-size:.78rem;color:var(--mid);margin-bottom:10px">Connected and syncing. Use this only to move to a different project or re-enter credentials.</div>
+    <button class="btn-secondary" id="reconnect-btn" type="button" style="margin-bottom:20px">⇄ Change connection settings</button>
+    <div style="font-family:'DM Serif Display',serif;font-size:1.2rem;color:var(--ink);margin-bottom:4px">Data Management</div>
+    <div style="font-size:.78rem;color:var(--mid);margin-bottom:12px">Export a CSV backup any time from the Summary tab.</div>
+    <button class="btn-secondary" id="danger-toggle" type="button">⚠ Advanced — destructive actions</button>
+    <div id="danger-zone" style="display:none;margin-top:14px;padding:14px;border:1.5px solid var(--rust);border-radius:10px;background:#fff5f5">
+      <div style="font-size:.82rem;font-weight:600;color:var(--rust);margin-bottom:6px">Danger Zone</div>
+      <div id="danger-stats" style="font-size:.78rem;color:var(--ink);margin-bottom:10px;line-height:1.5"></div>
+      <div id="export-gate" style="font-size:.75rem;margin-bottom:10px;padding:8px 10px;border-radius:6px;background:var(--paper);color:var(--mid)"></div>
+      <label style="display:block;font-size:.72rem;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--mid);margin-bottom:5px">Type DELETE to enable</label>
+      <input type="text" id="danger-confirm" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="DELETE"
+        style="width:100%;padding:10px 13px;border:1.5px solid var(--border);border-radius:8px;font-family:'DM Sans',sans-serif;font-size:.9rem;background:#fff;color:var(--ink);-webkit-appearance:none;margin-bottom:10px">
+      <button class="btn-secondary" id="clear-all-btn" type="button" disabled
+        style="border-color:var(--border);color:#bbb;margin-top:0">🗑 Clear All Expense Data</button>
+    </div>
+  </div>
+</div>
+
 <div id="screen-revenue" class="screen scrollable">
   <div class="rev-banner">
     <div class="rev-banner-t">Revenue Ledger</div>
     <div class="rev-banner-s">Rent and other money coming in. No receipts needed.</div>
+  </div>
+  <div class="rev-setup-warn" id="rev-setup-warn">
+    <strong style="color:var(--rust)">One-time setup needed.</strong>
+    Open your Supabase project → SQL Editor and run the <strong>income</strong> table
+    statement from the setup guide (Settings → Change connection settings → Show Supabase
+    setup guide), then reconnect. Until then income cannot be saved.
   </div>
   <div class="building-toggle" id="rev-bld-toggle"></div>
   <div class="add-form rev-form">
@@ -436,7 +495,6 @@
     <button class="btn-revenue" id="rev-save-btn" type="button">Record Income</button>
     <button class="btn-secondary" id="rev-clear-btn" type="button">Clear Form</button>
   </div>
-
   <div class="section-title">Recorded Income</div>
   <div class="filter-bar" id="rev-filter-bar"></div>
   <div id="revenue-list" class="expense-list"></div>
@@ -453,6 +511,34 @@
   <div id="net-by-property"></div>
   <div class="section-title">Cumulative Through the Year</div>
   <div id="net-cum-chart"></div>
+</div>
+
+<!-- Edit income modal -->
+<div class="modal-overlay" id="edit-income-modal" role="dialog" aria-modal="true">
+  <div class="modal-box">
+    <div class="modal-title">Edit Income</div>
+    <div id="edit-inc-summary" style="font-size:.8rem;color:var(--mid);margin-bottom:14px"></div>
+    <div class="form-row">
+      <label>Source</label>
+      <select id="edit-inc-src"></select>
+    </div>
+    <div class="form-row">
+      <label>Building</label>
+      <select id="edit-inc-bld"></select>
+    </div>
+    <div class="form-row">
+      <label>Tenant / Payer</label>
+      <input type="text" id="edit-inc-desc" maxlength="120" placeholder="Optional">
+    </div>
+    <div class="form-row" style="margin-bottom:4px">
+      <label>Notes</label>
+      <textarea id="edit-inc-notes" rows="2" maxlength="500" style="resize:none" placeholder="Optional"></textarea>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn primary" id="edit-inc-save-btn">Save Changes</button>
+      <button class="modal-btn" id="edit-inc-cancel-btn" style="background:var(--cream);color:var(--ink)">Cancel</button>
+    </div>
+  </div>
 </div>
 
 <!-- Edit expense modal -->
@@ -479,34 +565,6 @@
     <div class="modal-actions">
       <button class="modal-btn primary" id="edit-save-btn">Save Changes</button>
       <button class="modal-btn" id="edit-cancel-btn" style="background:var(--cream);color:var(--ink)">Cancel</button>
-    </div>
-  </div>
-</div>
-
-<!-- Edit income modal -->
-<div class="modal-overlay" id="edit-income-modal" role="dialog" aria-modal="true">
-  <div class="modal-box">
-    <div class="modal-title">Edit Income</div>
-    <div id="edit-inc-summary" style="font-size:.8rem;color:var(--mid);margin-bottom:14px"></div>
-    <div class="form-row">
-      <label>Source</label>
-      <select id="edit-inc-src"></select>
-    </div>
-    <div class="form-row">
-      <label>Building</label>
-      <select id="edit-inc-bld"></select>
-    </div>
-    <div class="form-row">
-      <label>Description</label>
-      <input type="text" id="edit-inc-desc" maxlength="120" placeholder="Optional">
-    </div>
-    <div class="form-row" style="margin-bottom:4px">
-      <label>Notes</label>
-      <textarea id="edit-inc-notes" rows="2" maxlength="500" style="resize:none" placeholder="Optional"></textarea>
-    </div>
-    <div class="modal-actions">
-      <button class="modal-btn primary" id="edit-inc-save-btn">Save Changes</button>
-      <button class="modal-btn" id="edit-inc-cancel-btn" style="background:var(--cream);color:var(--ink)">Cancel</button>
     </div>
   </div>
 </div>
@@ -690,10 +748,6 @@ function fillCatSelect(sel, selected){
     sel.insertBefore(og, sel.firstChild);
   }
 }
-// ── Income sources ────────────────────────────────────────────────────────
-const INC_SOURCES=['Rent','Parking','Laundry','Storage','Other Income'];
-const INC_COLOR='#2d6a4f';   // sage — distinct from the expense palette
-
 const STORAGE_KEY='propledger_v3';
 const MAX_IMG_BYTES=800*1024;
 const MAX_STORE_BYTES=4.5*1024*1024;
@@ -953,7 +1007,6 @@ function addExpense(){
 }
 
 function showDupModal(dupes,candidate){
-  setText(document.getElementById('dup-modal-title'),'⚠️ Possible Duplicate');
   const body=document.getElementById('dup-modal-body');
   body.innerHTML='';
   const buildings=getBuildings();
@@ -985,7 +1038,7 @@ function showDupModal(dupes,candidate){
 
 // Step 1 — "Review & Edit": dismiss, keep form for editing
 document.getElementById('dup-review-btn').addEventListener('click',()=>{
-  pendingExpense=null; pendingIncome=null;
+  pendingExpense=null;
   document.getElementById('dup-modal').classList.remove('open');
   showToast('Form kept — please review your entry');
 });
@@ -1000,22 +1053,21 @@ document.getElementById('dup-acknowledge-btn').addEventListener('click',()=>{
 document.getElementById('dup-confirm-yes').addEventListener('click',()=>{
   document.getElementById('dup-confirm-modal').classList.remove('open');
   if(pendingExpense){commitExpense(pendingExpense);pendingExpense=null;}
-  else if(pendingIncome){commitIncome(pendingIncome);pendingIncome=null;}
 });
 
 // Step 2 — "Cancel": abandon
 document.getElementById('dup-confirm-no').addEventListener('click',()=>{
-  pendingExpense=null; pendingIncome=null;
+  pendingExpense=null;
   document.getElementById('dup-confirm-modal').classList.remove('open');
   showToast('Entry cancelled');
 });
 
 // Backdrop taps dismiss safely
 document.getElementById('dup-modal').addEventListener('click',function(e){
-  if(e.target===this){pendingExpense=null;pendingIncome=null;this.classList.remove('open');}
+  if(e.target===this){pendingExpense=null;this.classList.remove('open');}
 });
 document.getElementById('dup-confirm-modal').addEventListener('click',function(e){
-  if(e.target===this){pendingExpense=null;pendingIncome=null;this.classList.remove('open');}
+  if(e.target===this){pendingExpense=null;this.classList.remove('open');}
 });
 
 function resetForm(){
@@ -1024,9 +1076,6 @@ function resetForm(){
   showErr('err-amt',false);showErr('err-date',false);
   clearReceipt();
 }
-// forms.js quirk: some browsers restore select values on reload; make sure
-// the Income select stays sane if it was never touched.
-
 
 const today=()=>new Date().toISOString().split('T')[0];
 
@@ -1500,19 +1549,10 @@ function showTab(name){
   document.getElementById('screen-'+name).classList.add('active');
   document.getElementById('tab-'+name).classList.add('active');
   if(name==='expenses'){makeBldToggles('flt-bld-toggle',fltBld,id=>{fltBld=id;updBldActive('flt-bld-toggle',id);renderExpenses();},true);renderExpenses();}
-  if(name==='revenue'){
-    // The toggle here picks which building a NEW entry belongs to, and
-    // doubles as the list filter — same control, both jobs.
-    makeBldToggles('rev-bld-toggle',curRevBld,(id,cid)=>{
-      curRevBld=id; fltRevBld=id; updBldActive(cid,id); renderRevenue();
-    },false);
-    renderRevenue();
-  }
-  if(name==='net')renderNet();
   if(name==='summary')renderSummary();
   if(name==='settings')renderSettings();
 }
-['add','expenses','summary','revenue','net','settings'].forEach(n=>document.getElementById('tab-'+n).addEventListener('click',()=>showTab(n)));
+['add','expenses','summary','settings'].forEach(n=>document.getElementById('tab-'+n).addEventListener('click',()=>showTab(n)));
 
 // ── Format ────────────────────────────────────────────────────────────────────
 const fmt=n=>'$'+Number(n).toLocaleString('en-AU',{minimumFractionDigits:2,maximumFractionDigits:2});
@@ -1530,8 +1570,6 @@ function showToast(msg){
 function buildingExpenseCount(id){ return expenses.filter(e=>e.building===id).length; }
 
 function renderSettings(){
-  const warn=document.getElementById('income-setup-warn');
-  if(warn)warn.style.display=incomeTableMissing?'block':'none';
   const container=document.getElementById('bld-name-fields');
   if(!container)return;
   container.innerHTML='';
@@ -1590,9 +1628,7 @@ function renderSettings(){
 
 function refreshAllToggles(){
   if(!validBuildingId(curBld)){const f=getBuildings()[0];curBld=f?f.id:1;}
-  if(!validBuildingId(curRevBld)){const f=getBuildings()[0];curRevBld=f?f.id:1;fltRevBld=curRevBld;}
   if(fltBld!==0&&!validBuildingId(fltBld)){fltBld=0;}
-  makeBldToggles('rev-bld-toggle',curRevBld,(id,cid)=>{curRevBld=id;fltRevBld=id;updBldActive(cid,id);renderRevenue();},false);
   makeBldToggles('add-bld-toggle',curBld,(id,cid)=>{curBld=id;updBldActive(cid,id);},false);
   makeBldToggles('flt-bld-toggle',fltBld,(id,cid)=>{fltBld=id;updBldActive(cid,id);renderExpenses();},true);
 }
@@ -1659,18 +1695,14 @@ document.getElementById('danger-toggle').addEventListener('click',function(){
 function refreshDangerZone(){
   const total=expenses.reduce((s,e)=>s+e.amount,0);
   const withRec=expenses.filter(e=>e.receipt).length;
-  const incTotal=incomeRows.reduce((s,r)=>s+r.amount,0);
   const stats=document.getElementById('danger-stats');
-  if(expenses.length===0&&incomeRows.length===0){
-    setText(stats,'There is no expense or income data to delete.');
+  if(expenses.length===0){
+    setText(stats,'There is no expense data to delete.');
   }else{
-    let msg='This will permanently delete '+expenses.length+
+    setText(stats,'This will permanently delete '+expenses.length+
       ' expense'+(expenses.length!==1?'s':'')+' totalling '+fmt(total)+
-      (withRec?', including '+withRec+' receipt file'+(withRec!==1?'s':''):'');
-    if(incomeRows.length)
-      msg+=', and '+incomeRows.length+' income entr'+(incomeRows.length!==1?'ies':'y')+' totalling '+fmt(incTotal);
-    msg+='. This cannot be undone.';
-    setText(stats,msg);
+      (withRec?', including '+withRec+' receipt file'+(withRec!==1?'s':''):'')+
+      '. This cannot be undone.');
   }
   const gate=document.getElementById('export-gate');
   if(exportedThisSession){
@@ -1702,13 +1734,11 @@ document.getElementById('clear-all-btn').addEventListener('click',function(){
     showToast('Guards not satisfied — nothing deleted'); evaluateDangerGuards(); return;
   }
   const total=expenses.reduce((s,e)=>s+e.amount,0);
-  const incTotal=incomeRows.reduce((s,r)=>s+r.amount,0);
   pendingDelId='__ALL__';
   const modal=document.getElementById('confirm-modal');
-  modal.querySelector('.modal-title').textContent='Delete everything?';
+  modal.querySelector('.modal-title').textContent='Delete all '+expenses.length+' expenses?';
   modal.querySelector('.modal-body').textContent=
     'You are about to permanently delete '+expenses.length+' expenses totalling '+fmt(total)+
-    (incomeRows.length?' and '+incomeRows.length+' income entries totalling '+fmt(incTotal):'')+
     ' across all buildings, plus their receipt files. This cannot be undone from within the app.';
   modal.classList.add('open');
 });
@@ -1912,8 +1942,7 @@ function showConfigScreen(){
 // ════════════════════════════════════════════════════════════════════
 const CFG_KEY   = 'propledger_sb_cfg';
 const SESH_KEY  = 'propledger_sb_session';
-let   sbClient  = null;
-let   incomeTableMissing = false;   // Supabase client instance
+let   sbClient  = null;   // Supabase client instance
 let   sbReady   = false;
 
 const SETUP_SQL = `-- Run this once in Supabase SQL Editor
@@ -1929,14 +1958,15 @@ create table if not exists expenses (
   receipt_url text,
   created_at  timestamptz default now()
 );
+-- Row-level security: enable but allow all (access controlled by code in app)
 alter table expenses enable row level security;
 create policy "allow all" on expenses for all using (true) with check (true);
 
--- Rental income: rent, and anything else a property brings in
+-- Revenue ledger: rent and other money coming in
 create table if not exists income (
   id          bigint primary key,
   building    int not null,
-  source      text not null,        -- 'Rent', 'Parking', 'Laundry', 'Other'
+  source      text not null,
   amount      numeric(10,2) not null,
   date        date not null,
   description text,
@@ -2022,14 +2052,6 @@ document.getElementById('cfg-connect-btn').addEventListener('click', async ()=>{
       setText(err,'Connection failed: '+error.message+'. Have you run the setup SQL?');
       btn.textContent='Connect & Enter'; btn.disabled=false; return;
     }
-    // The income table is new. It cannot be created from the browser — only
-    // the SQL Editor can do that — so tell the user plainly if it is missing
-    // rather than silently losing every rent entry they try to save.
-    const {error:incErr}=await sbClient.from('income').select('id').limit(1);
-    incomeTableMissing = !!(incErr && incErr.code!=='PGRST116');
-    if(incomeTableMissing){
-      setText(err,'Connected. One more step: open Supabase → SQL Editor and run the "income" table SQL from the setup guide below, then reconnect.');
-    }
   }catch(e){ setText(err,'Network error — check your URL and internet connection'); btn.textContent='Connect & Enter'; btn.disabled=false; return; }
 
   saveCfg(url, key, cfg?.codeHash||hashCode(code));
@@ -2039,9 +2061,7 @@ document.getElementById('cfg-connect-btn').addEventListener('click', async ()=>{
   setSyncStatus('online');
   btn.textContent='Connect & Enter'; btn.disabled=false;
   await loadExpensesFromSupabase();
-  await loadIncomeFromSupabase();
   subscribeRealtime();
-  subscribeIncomeRealtime();
 });
 
 // ── Boot ───────────────────────────────────────────────────────────
@@ -2058,12 +2078,8 @@ async function bootConfig(){
       sbReady=true;
       hideConfigScreen();
       setSyncStatus('syncing');
-      const {error:incErr}=await sbClient.from('income').select('id').limit(1);
-      incomeTableMissing = !!(incErr && incErr.code!=='PGRST116');
       await loadExpensesFromSupabase();
-      await loadIncomeFromSupabase();
       subscribeRealtime();
-      subscribeIncomeRealtime();
       return;
     }
   }
@@ -2229,10 +2245,6 @@ function subscribeRealtime(){
 // ── Override confirmDel to call Supabase delete ────────────────────
 document.getElementById('confirm-yes').addEventListener('click',async()=>{
   const modal=document.getElementById('confirm-modal');
-  if(pendingIncDelId!=null){
-    await deleteIncomeFromSupabase(pendingIncDelId);
-    pendingIncDelId=null; modal.classList.remove('open'); return;
-  }
   if(pendingDelId==='__RESET_PIN__'){
     localStorage.removeItem(PIN_KEY); clearSession();
     modal.classList.remove('open');
@@ -2248,8 +2260,7 @@ document.getElementById('confirm-yes').addEventListener('click',async()=>{
     setSyncStatus('syncing');
     try{
       await sbClient.from('expenses').delete().neq('id',0);
-      if(!incomeTableMissing) await sbClient.from('income').delete().neq('id',0);
-      expenses=[]; incomeRows=[]; renderExpenses(); renderRevenue(); renderSummary();
+      expenses=[]; renderExpenses(); renderSummary();
       exportedThisSession=false;
       const _dz=document.getElementById('danger-zone');
       if(_dz){_dz.style.display='none';setText(document.getElementById('danger-toggle'),'⚠ Advanced — destructive actions');}
@@ -2275,472 +2286,6 @@ function refreshStorageBar(){
 }
 
 // ── Init ─────────────────────────────────────────────────────────────────────
-
-
-// ═══════════════════════════════════════════════════════════════════
-// INCOME — rent and other inflow, one row per property per date
-// ═══════════════════════════════════════════════════════════════════
-let incomeRows=[];
-let fltRevBld=1, fltRevSrc='all', pendingIncome=null, pendingIncDelId=null;
-let curRevBld=1;
-
-function fillSrcSelect(sel,selected){
-  if(!sel)return;
-  sel.innerHTML='';
-  INC_SOURCES.forEach(src=>{
-    const o=document.createElement('option');
-    o.value=src;o.textContent=src;
-    if(selected&&selected===src)o.selected=true;
-    sel.appendChild(o);
-  });
-  if(selected&&!INC_SOURCES.includes(selected)){
-    const o=document.createElement('option');
-    o.value=selected;o.textContent=selected+' ⚠';o.selected=true;
-    sel.insertBefore(o,sel.firstChild);
-  }
-}
-
-fillSrcSelect(document.getElementById('rev-src'));
-
-// The revenue form is entirely its own — it shares no fields with the
-// expense form, so the two tabs never interfere with each other.
-function showRevErr(id,show){
-  const e=document.getElementById(id);
-  if(e)e.style.display=show?'block':'none';
-  const inp=document.getElementById(id.replace('err-rev-','rev-'));
-  if(inp)inp.classList.toggle('input-err',show);
-}
-function buildIncObj(){
-  const src=document.getElementById('rev-src').value;
-  const amtRaw=document.getElementById('rev-amt').value;
-  const date=document.getElementById('rev-date').value;
-  const desc=sanitise(document.getElementById('rev-desc').value,120);
-  const notes=sanitise(document.getElementById('rev-notes').value,500);
-  let ok=true;
-  if(!validAmt(amtRaw)){showRevErr('err-rev-amt',true);ok=false;}else showRevErr('err-rev-amt',false);
-  if(!validDate(date)){showRevErr('err-rev-date',true);ok=false;}else showRevErr('err-rev-date',false);
-  if(!ok)return null;
-  return{id:Date.now(),building:curRevBld,source:src,
-    amount:Math.round(parseFloat(amtRaw)*100)/100,
-    date,description:desc,notes};
-}
-function resetRevForm(){
-  ['rev-amt','rev-desc','rev-notes'].forEach(id=>{
-    const e=document.getElementById(id); if(e)e.value='';
-  });
-  const d=document.getElementById('rev-date'); if(d)d.value=today();
-  showRevErr('err-rev-amt',false); showRevErr('err-rev-date',false);
-}
-function findIncDuplicates(candidate){
-  const cDate=new Date(candidate.date+'T12:00:00');
-  return incomeRows.filter(r=>{
-    if(r.building!==candidate.building||r.source!==candidate.source)return false;
-    if(Math.abs(r.amount-candidate.amount)>0.001)return false;
-    return Math.abs((cDate-new Date(r.date+'T12:00:00'))/864e5)<=7;
-  });
-}
-async function commitIncome(inc){
-  if(incomeTableMissing){
-    showToast('⚠ Income table not set up yet — see Settings');
-    return false;
-  }
-  setSyncStatus('syncing');
-  try{
-    const row={id:inc.id,building:inc.building,source:inc.source,amount:inc.amount,
-      date:inc.date,description:inc.description||null,notes:inc.notes||null};
-    const {error}=await sbClient.from('income').insert(row);
-    if(error)throw error;
-    incomeRows.unshift(inc);
-    setSyncStatus('online');
-    resetRevForm();
-    showToast('✓ Income recorded — '+fmt(inc.amount));
-    buildRevFilter(); renderRevenue(); renderSummary();
-    return true;
-  }catch(e){
-    setSyncStatus('error');
-    showToast('⚠ Save failed: '+e.message);
-    return false;
-  }
-}
-function addIncome(){
-  const inc=buildIncObj();
-  if(!inc)return;
-  const dupes=findIncDuplicates(inc);
-  if(dupes.length>0){pendingIncome=inc;showIncDupModal(dupes,inc);}
-  else commitIncome(inc);
-}
-function showIncDupModal(dupes,candidate){
-  setText(document.getElementById('dup-modal-title'),'⚠️ Possible Duplicate Income');
-  const body=document.getElementById('dup-modal-body');
-  body.innerHTML='';
-  const bInfo=getBuildings().find(b=>b.id===candidate.building)||getBuildings()[0];
-  const intro=document.createElement('p');intro.style.marginBottom='12px';
-  setText(intro,dupes.length===1?'A similar entry already exists:':dupes.length+' similar entries already exist:');
-  body.appendChild(intro);
-  dupes.forEach(d=>{
-    const dateStr=new Date(d.date+'T12:00:00').toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'});
-    const card=document.createElement('div');
-    card.style.cssText='background:var(--paper);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:.82rem';
-    const l1=document.createElement('div');l1.style.cssText='font-weight:600;color:var(--ink);margin-bottom:2px';
-    setText(l1,d.source+' — '+fmt(d.amount));
-    const l2=document.createElement('div');l2.style.color='var(--mid)';
-    setText(l2,bInfo.label+' · '+dateStr+(d.description?' · '+d.description:''));
-    card.append(l1,l2);body.appendChild(card);
-  });
-  document.getElementById('dup-modal').classList.add('open');
-}
-
-function buildRevFilter(){
-  const bar=document.getElementById('rev-filter-bar');
-  if(!bar)return;
-  bar.innerHTML='';
-  const addChip=(label,src)=>{
-    const c=document.createElement('div');
-    c.className='filter-chip'+(fltRevSrc===src?' active':'');
-    setText(c,label);
-    c.addEventListener('click',()=>{fltRevSrc=src;renderRevenue();});
-    bar.appendChild(c);
-  };
-  addChip('All','all');
-  [...new Set(incomeRows.map(r=>r.source))].forEach(s=>addChip(s,s));
-}
-function renderRevenue(){
-  buildRevFilter();
-  const list=document.getElementById('revenue-list');
-  if(!list)return;
-  list.innerHTML='';
-  let data=incomeRows;
-  if(fltRevBld!==0)data=data.filter(r=>r.building===fltRevBld);
-  if(fltRevSrc!=='all')data=data.filter(r=>r.source===fltRevSrc);
-  if(!data.length){
-    const d=document.createElement('div');d.className='empty-state';
-    d.innerHTML='<div class="es-icon">💰</div>';
-    const p=document.createElement('p');
-    setText(p,incomeTableMissing
-      ?'Income table not set up yet — see Settings'
-      :'Nothing recorded yet. Use the form above.');
-    d.appendChild(p);list.appendChild(d);return;
-  }
-  data.forEach(inc=>{
-    const bInfo=getBuildings().find(b=>b.id===inc.building)||getBuildings()[0];
-    const dateStr=new Date(inc.date+'T12:00:00').toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'});
-    const item=document.createElement('div');item.className='expense-item rev-item';
-    const main=document.createElement('div');main.className='ei-main';
-    const dot=document.createElement('div');dot.className='ei-cat-dot';dot.style.background=INC_COLOR;
-    const body=document.createElement('div');body.className='ei-body';
-    const title=document.createElement('div');title.className='ei-title';setText(title,inc.source);
-    const meta=document.createElement('div');meta.className='ei-meta';
-    const tag=document.createElement('span');tag.className='ei-bld-tag';tag.style.background=bInfo.color;tag.style.color='#fff';setText(tag,bInfo.label);
-    const dateEl=document.createElement('span');setText(dateEl,dateStr);
-    meta.append(tag,dateEl);body.append(title,meta);
-    const amt=document.createElement('div');amt.className='ei-amount';amt.style.color='#1e8449';setText(amt,'+'+fmt(inc.amount));
-    main.append(dot,body,amt);item.appendChild(main);
-    if(inc.description){const d=document.createElement('div');d.className='ei-desc';setText(d,inc.description);item.appendChild(d);}
-    const actions=document.createElement('div');actions.className='ei-actions';
-    if(inc.notes){
-      const nb=document.createElement('button');nb.className='ei-btn';setText(nb,'📝 Notes');
-      nb.addEventListener('click',()=>openNotesModal(inc.notes));actions.appendChild(nb);
-    }
-    const eb=document.createElement('button');eb.className='ei-btn';setText(eb,'✎ Edit');
-    eb.addEventListener('click',()=>openEditIncomeModal(inc.id));actions.appendChild(eb);
-    const db=document.createElement('button');db.className='ei-btn danger';setText(db,'Delete');
-    db.addEventListener('click',()=>confirmDelIncome(inc.id));actions.appendChild(db);
-    item.appendChild(actions);list.appendChild(item);
-  });
-}
-
-function confirmDelIncome(id){
-  pendingIncDelId=id;
-  const modal=document.getElementById('confirm-modal');
-  modal.querySelector('.modal-title').textContent='Delete this income entry?';
-  modal.querySelector('.modal-body').textContent='This action cannot be undone.';
-  modal.classList.add('open');
-}
-async function deleteIncomeFromSupabase(id){
-  setSyncStatus('syncing');
-  try{
-    const {error}=await sbClient.from('income').delete().eq('id',id);
-    if(error)throw error;
-    incomeRows=incomeRows.filter(r=>r.id!==id);
-    setSyncStatus('online');
-    renderRevenue(); renderSummary();
-    showToast('Deleted');
-  }catch(e){ setSyncStatus('error'); showToast('⚠ Delete failed: '+e.message); }
-}
-
-let editingIncId=null;
-function openEditIncomeModal(id){
-  const inc=incomeRows.find(r=>r.id===id);
-  if(!inc)return;
-  editingIncId=id;
-  const bInfo=getBuildings().find(b=>b.id===inc.building)||getBuildings()[0];
-  const dateStr=new Date(inc.date+'T12:00:00').toLocaleDateString('en-CA',{day:'numeric',month:'short',year:'numeric'});
-  setText(document.getElementById('edit-inc-summary'), fmt(inc.amount)+' · '+dateStr+' · currently in '+bInfo.label);
-  fillSrcSelect(document.getElementById('edit-inc-src'), inc.source);
-  const bs=document.getElementById('edit-inc-bld');bs.innerHTML='';
-  getBuildings().forEach(b=>{
-    const o=document.createElement('option');o.value=String(b.id);o.textContent=b.label;
-    if(b.id===inc.building)o.selected=true;bs.appendChild(o);
-  });
-  document.getElementById('edit-inc-desc').value=inc.description||'';
-  document.getElementById('edit-inc-notes').value=inc.notes||'';
-  document.getElementById('edit-income-modal').classList.add('open');
-}
-function closeEditIncomeModal(){editingIncId=null;document.getElementById('edit-income-modal').classList.remove('open');}
-document.getElementById('edit-inc-cancel-btn').addEventListener('click',closeEditIncomeModal);
-document.getElementById('edit-income-modal').addEventListener('click',function(e){if(e.target===this)closeEditIncomeModal();});
-document.getElementById('edit-inc-save-btn').addEventListener('click',async()=>{
-  if(editingIncId==null)return;
-  const inc=incomeRows.find(r=>r.id===editingIncId);
-  if(!inc){closeEditIncomeModal();return;}
-  const newSrc=document.getElementById('edit-inc-src').value;
-  const newBld=parseInt(document.getElementById('edit-inc-bld').value,10);
-  const newDesc=sanitise(document.getElementById('edit-inc-desc').value,120);
-  const newNotes=sanitise(document.getElementById('edit-inc-notes').value,500);
-  if(!validBuildingId(newBld)){showToast('Invalid building');return;}
-  const btn=document.getElementById('edit-inc-save-btn');
-  btn.textContent='Saving…';btn.disabled=true;
-  try{
-    setSyncStatus('syncing');
-    const {error}=await sbClient.from('income')
-      .update({source:newSrc,building:newBld,description:newDesc,notes:newNotes})
-      .eq('id',editingIncId);
-    if(error)throw error;
-    inc.source=newSrc;inc.building=newBld;inc.description=newDesc;inc.notes=newNotes;
-    setSyncStatus('online');
-    closeEditIncomeModal();
-    buildRevFilter();renderRevenue();renderSummary();
-    showToast('✓ Income updated');
-  }catch(e){ setSyncStatus('error'); showToast('⚠ Update failed: '+e.message); }
-  finally{ btn.textContent='Save Changes'; btn.disabled=false; }
-});
-
-document.getElementById('rev-save-btn').addEventListener('click',addIncome);
-document.getElementById('rev-clear-btn').addEventListener('click',resetRevForm);
-
-async function loadIncomeFromSupabase(){
-  if(incomeTableMissing){incomeRows=[];renderRevenue();return;}
-  try{
-    const {data,error}=await sbClient.from('income').select('*')
-      .order('date',{ascending:false}).order('id',{ascending:false});
-    if(error)throw error;
-    incomeRows=data.map(row=>({id:row.id,building:row.building,source:row.source,
-      amount:parseFloat(row.amount),date:row.date,
-      description:row.description||'',notes:row.notes||''}));
-    renderRevenue(); renderSummary(); buildRevFilter();
-  }catch(e){ showToast('⚠ Could not load income: '+e.message); }
-}
-function subscribeIncomeRealtime(){
-  if(incomeTableMissing||!sbClient)return;
-  sbClient.channel('income-changes')
-    .on('postgres_changes',{event:'INSERT',schema:'public',table:'income'},payload=>{
-      const row=payload.new;
-      const inc={id:row.id,building:row.building,source:row.source,
-        amount:parseFloat(row.amount),date:row.date,
-        description:row.description||'',notes:row.notes||''};
-      if(!incomeRows.find(r=>r.id===inc.id)){
-        incomeRows.unshift(inc);
-        renderRevenue(); renderSummary(); buildRevFilter();
-      }
-    })
-    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'income'},payload=>{
-      const row=payload.new;
-      const i=incomeRows.findIndex(r=>r.id===row.id);
-      if(i<0)return;
-      incomeRows[i]={id:row.id,building:row.building,source:row.source,
-        amount:parseFloat(row.amount),date:row.date,
-        description:row.description||'',notes:row.notes||''};
-      renderRevenue(); renderSummary();
-    })
-    .on('postgres_changes',{event:'DELETE',schema:'public',table:'income'},payload=>{
-      incomeRows=incomeRows.filter(r=>r.id!==payload.old.id);
-      renderRevenue(); renderSummary();
-    })
-    .subscribe();
-}
-
-// ═══════════════════════════════════════════════════════════════════
-// NET — income minus expense, per property and combined
-// ═══════════════════════════════════════════════════════════════════
-function netByBuilding(year){
-  const out={};
-  getBuildings().forEach(b=>{out[b.id]={inc:0,exp:0};});
-  expensesIn(year).forEach(e=>{ if(!out[e.building])out[e.building]={inc:0,exp:0}; out[e.building].exp+=e.amount; });
-  (incomeRows.filter(r=>expYear(r)===year)).forEach(r=>{ if(!out[r.building])out[r.building]={inc:0,exp:0}; out[r.building].inc+=r.amount; });
-  return out;
-}
-function cumulativeNet(year){
-  const out={};
-  getBuildings().forEach(b=>{out[b.id]=Array(12).fill(0);});
-  expensesIn(year).forEach(e=>{const m=expMonth(e);if(m>=0&&m<12){if(!out[e.building])out[e.building]=Array(12).fill(0);out[e.building][m]-=e.amount;}});
-  (incomeRows.filter(r=>expYear(r)===year)).forEach(r=>{const m=expMonth(r);if(m>=0&&m<12){if(!out[r.building])out[r.building]=Array(12).fill(0);out[r.building][m]+=r.amount;}});
-  Object.keys(out).forEach(k=>{let run=0;out[k]=out[k].map(v=>{run+=v;return Math.round(run*100)/100;});});
-  return out;
-}
-
-let netYear=null;
-function renderNetYearBar(){
-  const bar=document.getElementById('net-year-bar');
-  if(!bar)return;
-  bar.innerHTML='';
-  const yrs=new Set(expenses.map(expYear));
-  incomeRows.forEach(r=>yrs.add(expYear(r)));
-  yrs.add(new Date().getFullYear());
-  [...yrs].sort((a,b)=>b-a).forEach(y=>{
-    const b=document.createElement('button');b.type='button';
-    b.className='year-chip'+(y===netYear?' active':'');
-    setText(b,String(y));
-    b.addEventListener('click',()=>{netYear=y;renderNet();});
-    bar.appendChild(b);
-  });
-}
-
-function netLine(label,val,big){
-  const row=document.createElement('div');row.className='cat-row';
-  row.style.padding=big?'12px 16px':'9px 16px';
-  const nd=document.createElement('div');nd.className='cat-row-name';
-  setText(nd,label);if(big)nd.style.fontWeight='600';
-  const av=document.createElement('div');
-  av.className='cat-row-amt';
-  av.style.color=val<0?'var(--rust)':'#1e8449';
-  if(big)av.style.fontFamily="'DM Serif Display',serif";
-  if(big)av.style.fontSize='1.15rem';
-  setText(av,(val<0?'-':'+')+fmt(Math.abs(val)));
-  row.append(nd,av);return row;
-}
-
-function renderNet(){
-  renderNetYearBar();
-  const yrs=new Set(expenses.map(expYear));incomeRows.forEach(r=>yrs.add(expYear(r)));yrs.add(new Date().getFullYear());
-  if(netYear===null||![...yrs].includes(netYear)) netYear=[...yrs].sort((a,b)=>b-a)[0];
-
-  const nb=netByBuilding(netYear);
-  let totInc=0,totExp=0;
-  Object.values(nb).forEach(v=>{totInc+=v.inc;totExp+=v.exp;});
-
-  const ov=document.getElementById('net-overall');
-  ov.innerHTML='';
-  const card=document.createElement('div');card.className='bld-summary-card';
-  const hdr=document.createElement('div');hdr.className='bsc-header';hdr.style.background='#0a0a0f';
-  const ht=document.createElement('div');ht.className='bsc-title';setText(ht,'All Properties · '+netYear);
-  const net=totInc-totExp;
-  const hv=document.createElement('div');hv.className='bsc-total';
-  hv.style.color=net<0?'#e17055':'#c9a84c';
-  setText(hv,(net<0?'-':'+')+fmt(Math.abs(net)));
-  hdr.append(ht,hv);card.appendChild(hdr);
-  card.appendChild(netLine('Total Income',totInc));
-  card.appendChild(netLine('Total Expenses',-totExp));
-  card.appendChild(netLine('Net',net,true));
-  ov.appendChild(card);
-
-  const byP=document.getElementById('net-by-property');
-  byP.innerHTML='';
-  getBuildings().forEach(b=>{
-    const v=nb[b.id]||{inc:0,exp:0};
-    if(v.inc===0&&v.exp===0)return;
-    const c=document.createElement('div');c.className='bld-summary-card';
-    const h=document.createElement('div');h.className='bsc-header';h.style.background=b.color;
-    const t=document.createElement('div');t.className='bsc-title';setText(t,b.icon+' '+b.label);
-    const pn=v.inc-v.exp;
-    const pv=document.createElement('div');pv.className='bsc-total';
-    pv.style.color='#fff';setText(pv,(pn<0?'-':'+')+fmt(Math.abs(pn)));
-    h.append(t,pv);c.appendChild(h);
-    c.appendChild(netLine('Income',v.inc));
-    c.appendChild(netLine('Expenses',-v.exp));
-    byP.appendChild(c);
-  });
-  if(!byP.children.length){
-    const e=document.createElement('div');e.className='empty-state';
-    e.innerHTML='<div class="es-icon">💼</div>';
-    const p=document.createElement('p');setText(p,'Nothing recorded for '+netYear+' yet.');
-    e.appendChild(p);byP.appendChild(e);
-  }
-
-  const host=document.getElementById('net-cum-chart');
-  host.innerHTML='';
-  const cum=cumulativeNet(netYear);
-  const blds=getBuildings().filter(b=>cum[b.id]&&cum[b.id].some(v=>v!==0));
-  if(!blds.length){
-    const e=document.createElement('div');e.className='empty-state';
-    e.innerHTML='<div class="es-icon">📉</div>';
-    const p=document.createElement('p');setText(p,'Nothing to chart yet.');
-    e.appendChild(p);host.appendChild(e);return;
-  }
-  const lastM=lastVisibleMonth(netYear);
-  const finalVals=blds.map(b=>cum[b.id][11]);
-  const maxV=Math.max(...finalVals,0), minV=Math.min(...finalVals,0);
-  const span=Math.max(maxV-minV,1);
-
-  const NS='http://www.w3.org/2000/svg';
-  const W=360,H=190,L=42,R=354,TOP=16,BOT=150;
-  const plotH=BOT-TOP;
-  const zeroY=BOT-((0-minV)/span)*plotH;
-  const svg=document.createElementNS(NS,'svg');
-  svg.setAttribute('viewBox','0 0 '+W+' '+H);svg.setAttribute('class','chart-svg');
-  const colW=(R-L)/12, lineW=Math.min(2.2,(colW-10)/blds.length);
-
-  [minV,minV+span*.5,maxV].forEach(v=>{
-    const y=BOT-((v-minV)/span)*plotH;
-    const ln=document.createElementNS(NS,'line');
-    ln.setAttribute('x1',L);ln.setAttribute('x2',R);ln.setAttribute('y1',y);ln.setAttribute('y2',y);
-    ln.setAttribute('stroke','#d4cfc6');ln.setAttribute('stroke-width',v===0?1:.5);
-    if(v!==0)ln.setAttribute('stroke-dasharray','2 3');
-    svg.appendChild(ln);
-    const tx=document.createElementNS(NS,'text');
-    tx.setAttribute('x',L-5);tx.setAttribute('y',y+3);tx.setAttribute('text-anchor','end');
-    tx.setAttribute('font-size','6.5');tx.setAttribute('fill','#6b7280');
-    tx.setAttribute('font-family','DM Sans, sans-serif');
-    tx.textContent=(v<0?'-':'')+fmtShort(Math.abs(v));
-    svg.appendChild(tx);
-  });
-
-  blds.forEach((b,bi)=>{
-    const vals=cum[b.id];
-    const pts=[];
-    for(let m=0;m<=lastM;m++){
-      const x=L+m*colW+colW/2, y=BOT-((vals[m]-minV)/span)*plotH;
-      pts.push([x,y]);
-    }
-    if(pts.length>1){
-      const path=document.createElementNS(NS,'path');
-      path.setAttribute('d','M'+pts.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' L'));
-      path.setAttribute('fill','none');path.setAttribute('stroke',b.color);
-      path.setAttribute('stroke-width',lineW+.6);path.setAttribute('stroke-linejoin','round');
-      svg.appendChild(path);
-    }
-    pts.forEach(([x,y],i)=>{
-      if(i===pts.length-1){
-        const dot=document.createElementNS(NS,'circle');
-        dot.setAttribute('cx',x);dot.setAttribute('cy',y);dot.setAttribute('r',2.4);
-        dot.setAttribute('fill',b.color);svg.appendChild(dot);
-        const cap=document.createElementNS(NS,'text');
-        cap.setAttribute('x',x);cap.setAttribute('y',y<zeroY?y-5:y+9);
-        cap.setAttribute('text-anchor','middle');cap.setAttribute('font-size','6.3');
-        cap.setAttribute('font-family','DM Sans, sans-serif');cap.setAttribute('font-weight','600');
-        cap.setAttribute('fill','#0a0a0f');
-        cap.textContent=(vals[lastM]<0?'-':'')+barLabel(Math.abs(vals[lastM]));
-        svg.appendChild(cap);
-      }
-    });
-  });
-  for(let m=0;m<12;m++){
-    const x=L+m*colW+colW/2;
-    const lbl=document.createElementNS(NS,'text');
-    lbl.setAttribute('x',x);lbl.setAttribute('y',BOT+14);lbl.setAttribute('text-anchor','middle');
-    lbl.setAttribute('font-size','7.5');lbl.setAttribute('font-family','DM Sans, sans-serif');
-    const future=m>lastM;
-    lbl.setAttribute('fill',future?'#c4bfb6':'#6b7280');
-    lbl.textContent=MONTH_INITIALS[m];
-    svg.appendChild(lbl);
-  }
-  host.appendChild(chartCard('Net cumulative · '+netYear,
-    (finalVals.reduce((s,v)=>s+v,0)<0?'-':'+')+fmt(Math.abs(finalVals.reduce((s,v)=>s+v,0))),
-    'Income minus expenses, running from January. A line above zero means the property is ahead for the year.',
-    svg,
-    [...blds].sort((a,b)=>cum[b.id][11]-cum[a.id][11]).map(b=>({
-      label:b.label,color:b.color,
-      amount:(cum[b.id][11]<0?'-':'+')+fmt(Math.abs(cum[b.id][11]))}))));
-}
 
 // ══ EDIT EXPENSE ═════════════════════════════════════════════════════
 let editingId=null;
@@ -2817,9 +2362,7 @@ document.getElementById('edit-save-btn').addEventListener('click',async()=>{
 fillCatSelect(document.getElementById('inp-cat'));
 
 document.getElementById('inp-date').value=today();
-{const rd=document.getElementById('rev-date'); if(rd)rd.value=today();}
 makeBldToggles('add-bld-toggle',curBld,(id,cid)=>{curBld=id;updBldActive(cid,id);},false);
-makeBldToggles('rev-bld-toggle',curRevBld,(id,cid)=>{curRevBld=id;fltRevBld=id;updBldActive(cid,id);renderRevenue();},false);
 makeBldToggles('flt-bld-toggle',fltBld,(id,cid)=>{fltBld=id;updBldActive(cid,id);renderExpenses();},true);
 buildCatFilter();
 refreshStorageBar();
@@ -2937,5 +2480,552 @@ self.addEventListener('fetch',e=>{
   }
 })();
 </script>
+
+<script>
+'use strict';
+/* ═══════════════════════════════════════════════════════════════════
+   REVENUE LEDGER + NET POSITION
+   Entirely additive. This block runs last and touches nothing that the
+   existing tabs rely on — it only adds listeners and renders into the
+   two new screens.
+   ═══════════════════════════════════════════════════════════════════ */
+
+const INC_SOURCES=['Rent','Parking','Laundry','Storage','Other Income'];
+const INC_COLOR='#2d6a4f';
+
+let incomeRows=[];
+let curRevBld=1, fltRevBld=1, fltRevSrc='all';
+let pendingIncome=null, pendingIncDelId=null, editingIncId=null;
+let incomeTableMissing=false;
+let netYear=null;
+
+// ── helpers ────────────────────────────────────────────────────────
+function fillSrcSelect(sel,selected){
+  if(!sel)return;
+  sel.innerHTML='';
+  INC_SOURCES.forEach(src=>{
+    const o=document.createElement('option');
+    o.value=src;o.textContent=src;
+    if(selected===src)o.selected=true;
+    sel.appendChild(o);
+  });
+  if(selected&&!INC_SOURCES.includes(selected)){
+    const o=document.createElement('option');
+    o.value=selected;o.textContent=selected+' \u26a0';o.selected=true;
+    sel.insertBefore(o,sel.firstChild);
+  }
+}
+function showRevErr(id,show){
+  const e=document.getElementById(id);
+  if(e)e.style.display=show?'block':'none';
+  const inp=document.getElementById(id.replace('err-rev-','rev-'));
+  if(inp)inp.classList.toggle('input-err',show);
+}
+function revWarn(){
+  const w=document.getElementById('rev-setup-warn');
+  if(w)w.style.display=incomeTableMissing?'block':'none';
+}
+
+// ── form ───────────────────────────────────────────────────────────
+function buildIncObj(){
+  const src=document.getElementById('rev-src').value;
+  const amtRaw=document.getElementById('rev-amt').value;
+  const date=document.getElementById('rev-date').value;
+  const desc=sanitise(document.getElementById('rev-desc').value,120);
+  const notes=sanitise(document.getElementById('rev-notes').value,500);
+  let ok=true;
+  if(!validAmt(amtRaw)){showRevErr('err-rev-amt',true);ok=false;}else showRevErr('err-rev-amt',false);
+  if(!validDate(date)){showRevErr('err-rev-date',true);ok=false;}else showRevErr('err-rev-date',false);
+  if(!ok)return null;
+  return{id:Date.now(),building:curRevBld,source:src,
+    amount:Math.round(parseFloat(amtRaw)*100)/100,
+    date,description:desc,notes};
+}
+function resetRevForm(){
+  ['rev-amt','rev-desc','rev-notes'].forEach(id=>{
+    const e=document.getElementById(id); if(e)e.value='';
+  });
+  const d=document.getElementById('rev-date'); if(d)d.value=today();
+  showRevErr('err-rev-amt',false); showRevErr('err-rev-date',false);
+}
+function findIncDuplicates(cand){
+  const cDate=new Date(cand.date+'T12:00:00');
+  return incomeRows.filter(r=>
+    r.building===cand.building && r.source===cand.source &&
+    Math.abs(r.amount-cand.amount)<=0.001 &&
+    Math.abs((cDate-new Date(r.date+'T12:00:00'))/864e5)<=7);
+}
+
+async function commitIncome(inc){
+  if(incomeTableMissing){showToast('\u26a0 Income table not set up yet');return false;}
+  setSyncStatus('syncing');
+  try{
+    const {error}=await sbClient.from('income').insert({
+      id:inc.id,building:inc.building,source:inc.source,amount:inc.amount,
+      date:inc.date,description:inc.description||null,notes:inc.notes||null});
+    if(error)throw error;
+    incomeRows.unshift(inc);
+    setSyncStatus('online');
+    resetRevForm();
+    showToast('\u2713 Income recorded \u2014 '+fmt(inc.amount));
+    renderRevenue();
+    return true;
+  }catch(e){
+    setSyncStatus('error');
+    showToast('\u26a0 Save failed: '+e.message);
+    return false;
+  }
+}
+function addIncome(){
+  const inc=buildIncObj();
+  if(!inc)return;
+  const dupes=findIncDuplicates(inc);
+  if(dupes.length){pendingIncome=inc;showIncDupModal(dupes,inc);}
+  else commitIncome(inc);
+}
+function showIncDupModal(dupes,cand){
+  setText(document.getElementById('dup-modal-title'),'\u26a0\ufe0f Possible Duplicate Income');
+  const body=document.getElementById('dup-modal-body');
+  body.innerHTML='';
+  const bInfo=getBuildings().find(b=>b.id===cand.building)||getBuildings()[0];
+  const intro=document.createElement('p');intro.style.marginBottom='12px';
+  setText(intro,dupes.length===1?'A similar entry already exists:':dupes.length+' similar entries already exist:');
+  body.appendChild(intro);
+  dupes.forEach(d=>{
+    const dateStr=new Date(d.date+'T12:00:00').toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'});
+    const card=document.createElement('div');
+    card.style.cssText='background:var(--paper);border:1px solid var(--border);border-radius:8px;padding:10px 12px;margin-bottom:8px;font-size:.82rem';
+    const l1=document.createElement('div');l1.style.cssText='font-weight:600;color:var(--ink);margin-bottom:2px';
+    setText(l1,d.source+' \u2014 '+fmt(d.amount));
+    const l2=document.createElement('div');l2.style.color='var(--mid)';
+    setText(l2,bInfo.label+' \u00b7 '+dateStr+(d.description?' \u00b7 '+d.description:''));
+    card.append(l1,l2);body.appendChild(card);
+  });
+  document.getElementById('dup-modal').classList.add('open');
+}
+
+// ── list ───────────────────────────────────────────────────────────
+function buildRevFilter(){
+  const bar=document.getElementById('rev-filter-bar');
+  if(!bar)return;
+  bar.innerHTML='';
+  const chip=(label,src)=>{
+    const c=document.createElement('div');
+    c.className='filter-chip'+(fltRevSrc===src?' active':'');
+    setText(c,label);
+    c.addEventListener('click',()=>{fltRevSrc=src;renderRevenue();});
+    bar.appendChild(c);
+  };
+  chip('All','all');
+  [...new Set(incomeRows.map(r=>r.source))].forEach(s=>chip(s,s));
+}
+function renderRevenue(){
+  revWarn();
+  buildRevFilter();
+  const list=document.getElementById('revenue-list');
+  if(!list)return;
+  list.innerHTML='';
+  let data=incomeRows;
+  if(fltRevBld!==0)data=data.filter(r=>r.building===fltRevBld);
+  if(fltRevSrc!=='all')data=data.filter(r=>r.source===fltRevSrc);
+  if(!data.length){
+    const d=document.createElement('div');d.className='empty-state';
+    d.innerHTML='<div class="es-icon">\ud83d\udcb0</div>';
+    const p=document.createElement('p');
+    setText(p,incomeTableMissing?'Run the income table SQL to begin.':'Nothing recorded yet. Use the form above.');
+    d.appendChild(p);list.appendChild(d);return;
+  }
+  data.forEach(inc=>{
+    const bInfo=getBuildings().find(b=>b.id===inc.building)||getBuildings()[0];
+    const dateStr=new Date(inc.date+'T12:00:00').toLocaleDateString('en-AU',{day:'numeric',month:'short',year:'numeric'});
+    const item=document.createElement('div');item.className='expense-item rev-item';
+    const main=document.createElement('div');main.className='ei-main';
+    const dot=document.createElement('div');dot.className='ei-cat-dot';dot.style.background=INC_COLOR;
+    const body=document.createElement('div');body.className='ei-body';
+    const title=document.createElement('div');title.className='ei-title';setText(title,inc.source);
+    const meta=document.createElement('div');meta.className='ei-meta';
+    const tag=document.createElement('span');tag.className='ei-bld-tag';
+    tag.style.background=bInfo.color;tag.style.color='#fff';setText(tag,bInfo.label);
+    const dateEl=document.createElement('span');setText(dateEl,dateStr);
+    meta.append(tag,dateEl);body.append(title,meta);
+    const amt=document.createElement('div');amt.className='ei-amount';
+    amt.style.color='#1e8449';setText(amt,'+'+fmt(inc.amount));
+    main.append(dot,body,amt);item.appendChild(main);
+    if(inc.description){
+      const d=document.createElement('div');d.className='ei-desc';setText(d,inc.description);item.appendChild(d);
+    }
+    const actions=document.createElement('div');actions.className='ei-actions';
+    if(inc.notes){
+      const nb=document.createElement('button');nb.className='ei-btn';setText(nb,'\ud83d\udcdd Notes');
+      nb.addEventListener('click',()=>openNotesModal(inc.notes));actions.appendChild(nb);
+    }
+    const eb=document.createElement('button');eb.className='ei-btn';setText(eb,'\u270e Edit');
+    eb.addEventListener('click',()=>openEditIncomeModal(inc.id));actions.appendChild(eb);
+    const db=document.createElement('button');db.className='ei-btn danger';setText(db,'Delete');
+    db.addEventListener('click',()=>confirmDelIncome(inc.id));actions.appendChild(db);
+    item.appendChild(actions);list.appendChild(item);
+  });
+}
+
+// ── delete / edit ──────────────────────────────────────────────────
+function confirmDelIncome(id){
+  pendingIncDelId=id; pendingDelId=null;
+  const m=document.getElementById('confirm-modal');
+  m.querySelector('.modal-title').textContent='Delete this income entry?';
+  m.querySelector('.modal-body').textContent='This action cannot be undone.';
+  m.classList.add('open');
+}
+async function deleteIncomeFromSupabase(id){
+  setSyncStatus('syncing');
+  try{
+    const {error}=await sbClient.from('income').delete().eq('id',id);
+    if(error)throw error;
+    incomeRows=incomeRows.filter(r=>r.id!==id);
+    setSyncStatus('online');renderRevenue();showToast('Deleted');
+  }catch(e){setSyncStatus('error');showToast('\u26a0 Delete failed: '+e.message);}
+}
+function openEditIncomeModal(id){
+  const inc=incomeRows.find(r=>r.id===id);
+  if(!inc)return;
+  editingIncId=id;
+  const bInfo=getBuildings().find(b=>b.id===inc.building)||getBuildings()[0];
+  const dateStr=new Date(inc.date+'T12:00:00').toLocaleDateString('en-CA',{day:'numeric',month:'short',year:'numeric'});
+  setText(document.getElementById('edit-inc-summary'),
+    fmt(inc.amount)+' \u00b7 '+dateStr+' \u00b7 currently in '+bInfo.label);
+  fillSrcSelect(document.getElementById('edit-inc-src'),inc.source);
+  const bs=document.getElementById('edit-inc-bld');bs.innerHTML='';
+  getBuildings().forEach(b=>{
+    const o=document.createElement('option');o.value=String(b.id);o.textContent=b.label;
+    if(b.id===inc.building)o.selected=true;bs.appendChild(o);
+  });
+  document.getElementById('edit-inc-desc').value=inc.description||'';
+  document.getElementById('edit-inc-notes').value=inc.notes||'';
+  document.getElementById('edit-income-modal').classList.add('open');
+}
+function closeEditIncomeModal(){
+  editingIncId=null;
+  document.getElementById('edit-income-modal').classList.remove('open');
+}
+
+// ── load + realtime ────────────────────────────────────────────────
+async function loadIncomeFromSupabase(){
+  if(!sbClient)return;
+  try{
+    const probe=await sbClient.from('income').select('id').limit(1);
+    incomeTableMissing = !!(probe.error && probe.error.code!=='PGRST116');
+  }catch{ incomeTableMissing=true; }
+  revWarn();
+  if(incomeTableMissing){incomeRows=[];renderRevenue();return;}
+  try{
+    const {data,error}=await sbClient.from('income').select('*')
+      .order('date',{ascending:false}).order('id',{ascending:false});
+    if(error)throw error;
+    incomeRows=data.map(r=>({id:r.id,building:r.building,source:r.source,
+      amount:parseFloat(r.amount),date:r.date,
+      description:r.description||'',notes:r.notes||''}));
+    renderRevenue();
+  }catch(e){ showToast('\u26a0 Could not load income: '+e.message); }
+}
+function subscribeIncomeRealtime(){
+  if(incomeTableMissing||!sbClient)return;
+  const toRow=r=>({id:r.id,building:r.building,source:r.source,
+    amount:parseFloat(r.amount),date:r.date,
+    description:r.description||'',notes:r.notes||''});
+  sbClient.channel('income-changes')
+    .on('postgres_changes',{event:'INSERT',schema:'public',table:'income'},p=>{
+      if(!incomeRows.find(r=>r.id===p.new.id)){incomeRows.unshift(toRow(p.new));renderRevenue();}
+    })
+    .on('postgres_changes',{event:'UPDATE',schema:'public',table:'income'},p=>{
+      const i=incomeRows.findIndex(r=>r.id===p.new.id);
+      if(i>=0){incomeRows[i]=toRow(p.new);renderRevenue();}
+    })
+    .on('postgres_changes',{event:'DELETE',schema:'public',table:'income'},p=>{
+      incomeRows=incomeRows.filter(r=>r.id!==p.old.id);renderRevenue();
+    })
+    .subscribe();
+}
+
+/* ═══ NET ═══════════════════════════════════════════════════════════ */
+function netByBuilding(year){
+  const out={};
+  getBuildings().forEach(b=>{out[b.id]={inc:0,exp:0};});
+  expensesIn(year).forEach(e=>{
+    if(!out[e.building])out[e.building]={inc:0,exp:0};
+    out[e.building].exp+=e.amount;});
+  incomeRows.filter(r=>expYear(r)===year).forEach(r=>{
+    if(!out[r.building])out[r.building]={inc:0,exp:0};
+    out[r.building].inc+=r.amount;});
+  return out;
+}
+function cumulativeNet(year){
+  const out={};
+  getBuildings().forEach(b=>{out[b.id]=Array(12).fill(0);});
+  expensesIn(year).forEach(e=>{const m=expMonth(e);
+    if(m>=0&&m<12){if(!out[e.building])out[e.building]=Array(12).fill(0);out[e.building][m]-=e.amount;}});
+  incomeRows.filter(r=>expYear(r)===year).forEach(r=>{const m=expMonth(r);
+    if(m>=0&&m<12){if(!out[r.building])out[r.building]=Array(12).fill(0);out[r.building][m]+=r.amount;}});
+  Object.keys(out).forEach(k=>{let run=0;
+    out[k]=out[k].map(v=>{run+=v;return Math.round(run*100)/100;});});
+  return out;
+}
+function netYears(){
+  const s=new Set(expenses.map(expYear));
+  incomeRows.forEach(r=>s.add(expYear(r)));
+  s.add(new Date().getFullYear());
+  return [...s].filter(Number.isFinite).sort((a,b)=>b-a);
+}
+function netLine(label,val,big){
+  const row=document.createElement('div');row.className='cat-row';
+  row.style.padding=big?'12px 16px':'9px 16px';
+  const nd=document.createElement('div');nd.className='cat-row-name';
+  setText(nd,label);if(big)nd.style.fontWeight='600';
+  const av=document.createElement('div');av.className='cat-row-amt';
+  av.style.color=val<0?'var(--rust)':'#1e8449';
+  if(big){av.style.fontFamily="'DM Serif Display',serif";av.style.fontSize='1.15rem';}
+  setText(av,(val<0?'-':'+')+fmt(Math.abs(val)));
+  row.append(nd,av);return row;
+}
+function renderNetYearBar(){
+  const bar=document.getElementById('net-year-bar');
+  if(!bar)return;
+  bar.innerHTML='';
+  netYears().forEach(y=>{
+    const b=document.createElement('button');b.type='button';
+    b.className='year-chip'+(y===netYear?' active':'');
+    setText(b,String(y));
+    b.addEventListener('click',()=>{netYear=y;renderNet();});
+    bar.appendChild(b);
+  });
+}
+function renderNet(){
+  const yrs=netYears();
+  if(netYear===null||!yrs.includes(netYear))netYear=yrs[0];
+  renderNetYearBar();
+
+  const nb=netByBuilding(netYear);
+  let totInc=0,totExp=0;
+  Object.values(nb).forEach(v=>{totInc+=v.inc;totExp+=v.exp;});
+  const net=totInc-totExp;
+
+  const ov=document.getElementById('net-overall');
+  ov.innerHTML='';
+  const card=document.createElement('div');card.className='bld-summary-card';
+  const hdr=document.createElement('div');hdr.className='bsc-header';hdr.style.background='#0a0a0f';
+  const ht=document.createElement('div');ht.className='bsc-title';
+  setText(ht,'All Properties \u00b7 '+netYear);
+  const hv=document.createElement('div');hv.className='bsc-total';
+  hv.style.color=net<0?'#e17055':'#c9a84c';
+  setText(hv,(net<0?'-':'+')+fmt(Math.abs(net)));
+  hdr.append(ht,hv);card.appendChild(hdr);
+  card.appendChild(netLine('Total Income',totInc));
+  card.appendChild(netLine('Total Expenses',-totExp));
+  card.appendChild(netLine('Net',net,true));
+  ov.appendChild(card);
+
+  const byP=document.getElementById('net-by-property');
+  byP.innerHTML='';
+  getBuildings().forEach(b=>{
+    const v=nb[b.id]||{inc:0,exp:0};
+    if(v.inc===0&&v.exp===0)return;
+    const c=document.createElement('div');c.className='bld-summary-card';
+    const h=document.createElement('div');h.className='bsc-header';h.style.background=b.color;
+    const t=document.createElement('div');t.className='bsc-title';setText(t,b.icon+' '+b.label);
+    const pn=v.inc-v.exp;
+    const pv=document.createElement('div');pv.className='bsc-total';pv.style.color='#fff';
+    setText(pv,(pn<0?'-':'+')+fmt(Math.abs(pn)));
+    h.append(t,pv);c.appendChild(h);
+    c.appendChild(netLine('Income',v.inc));
+    c.appendChild(netLine('Expenses',-v.exp));
+    byP.appendChild(c);
+  });
+  if(!byP.children.length){
+    const e=document.createElement('div');e.className='empty-state';
+    e.innerHTML='<div class="es-icon">\ud83d\udcbc</div>';
+    const p=document.createElement('p');setText(p,'Nothing recorded for '+netYear+' yet.');
+    e.appendChild(p);byP.appendChild(e);
+  }
+
+  // ── cumulative net line chart: can go negative, so it needs a
+  //    signed scale and its own zero line rather than reusing the bars
+  const host=document.getElementById('net-cum-chart');
+  host.innerHTML='';
+  const cum=cumulativeNet(netYear);
+  const blds=getBuildings().filter(b=>cum[b.id]&&cum[b.id].some(v=>v!==0));
+  if(!blds.length){
+    const e=document.createElement('div');e.className='empty-state';
+    e.innerHTML='<div class="es-icon">\ud83d\udcc9</div>';
+    const p=document.createElement('p');setText(p,'Nothing to chart yet.');
+    e.appendChild(p);host.appendChild(e);return;
+  }
+  const lastM=lastVisibleMonth(netYear);
+  const finals=blds.map(b=>cum[b.id][lastM]);
+  const allVals=[];
+  blds.forEach(b=>{for(let m=0;m<=lastM;m++)allVals.push(cum[b.id][m]);});
+  const maxV=Math.max(...allVals,0), minV=Math.min(...allVals,0);
+  const span=Math.max(maxV-minV,1);
+
+  const NS='http://www.w3.org/2000/svg';
+  const W=360,H=195,L=44,R=354,TOP=18,BOT=152,plotH=BOT-TOP;
+  const yOf=v=>BOT-((v-minV)/span)*plotH;
+  const zeroY=yOf(0);
+  const svg=document.createElementNS(NS,'svg');
+  svg.setAttribute('viewBox','0 0 '+W+' '+H);
+  svg.setAttribute('class','chart-svg');
+  svg.setAttribute('role','img');
+  const colW=(R-L)/12;
+
+  [minV,(minV+maxV)/2,maxV].forEach(v=>{
+    const y=yOf(v);
+    const ln=document.createElementNS(NS,'line');
+    ln.setAttribute('x1',L);ln.setAttribute('x2',R);
+    ln.setAttribute('y1',y);ln.setAttribute('y2',y);
+    ln.setAttribute('stroke','#d4cfc6');ln.setAttribute('stroke-width',.5);
+    ln.setAttribute('stroke-dasharray','2 3');svg.appendChild(ln);
+    const tx=document.createElementNS(NS,'text');
+    tx.setAttribute('x',L-5);tx.setAttribute('y',y+3);
+    tx.setAttribute('text-anchor','end');tx.setAttribute('font-size','6.5');
+    tx.setAttribute('fill','#6b7280');tx.setAttribute('font-family','DM Sans, sans-serif');
+    tx.textContent=(v<0?'-':'')+fmtShort(Math.abs(v));svg.appendChild(tx);
+  });
+  // solid zero line — above it the property is ahead for the year
+  if(minV<0&&maxV>0){
+    const z=document.createElementNS(NS,'line');
+    z.setAttribute('x1',L);z.setAttribute('x2',R);
+    z.setAttribute('y1',zeroY);z.setAttribute('y2',zeroY);
+    z.setAttribute('stroke','#0a0a0f');z.setAttribute('stroke-width',1);
+    svg.appendChild(z);
+  }
+
+  blds.forEach(b=>{
+    const vals=cum[b.id], pts=[];
+    for(let m=0;m<=lastM;m++)pts.push([L+m*colW+colW/2, yOf(vals[m])]);
+    if(pts.length>1){
+      const path=document.createElementNS(NS,'path');
+      path.setAttribute('d','M'+pts.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' L'));
+      path.setAttribute('fill','none');path.setAttribute('stroke',b.color);
+      path.setAttribute('stroke-width',2.2);path.setAttribute('stroke-linejoin','round');
+      path.setAttribute('stroke-linecap','round');
+      svg.appendChild(path);
+    }
+    const [lx,ly]=pts[pts.length-1];
+    const dot=document.createElementNS(NS,'circle');
+    dot.setAttribute('cx',lx);dot.setAttribute('cy',ly);dot.setAttribute('r',2.6);
+    dot.setAttribute('fill',b.color);svg.appendChild(dot);
+    const cap=document.createElementNS(NS,'text');
+    cap.setAttribute('x',Math.min(lx,R-14));
+    cap.setAttribute('y',ly<zeroY?ly-5.5:ly+9.5);
+    cap.setAttribute('text-anchor','middle');cap.setAttribute('font-size','6.3');
+    cap.setAttribute('font-family','DM Sans, sans-serif');cap.setAttribute('font-weight','600');
+    cap.setAttribute('fill','#0a0a0f');
+    const fv=vals[lastM];
+    cap.textContent=(fv<0?'-':'+')+barLabel(Math.abs(fv));
+    svg.appendChild(cap);
+  });
+  for(let m=0;m<12;m++){
+    const lbl=document.createElementNS(NS,'text');
+    lbl.setAttribute('x',L+m*colW+colW/2);lbl.setAttribute('y',BOT+14);
+    lbl.setAttribute('text-anchor','middle');lbl.setAttribute('font-size','7.5');
+    lbl.setAttribute('font-family','DM Sans, sans-serif');
+    lbl.setAttribute('fill',m>lastM?'#c4bfb6':'#6b7280');
+    lbl.textContent=MONTH_INITIALS[m];
+    svg.appendChild(lbl);
+  }
+  const totalNet=finals.reduce((s,v)=>s+v,0);
+  host.appendChild(chartCard('Net cumulative \u00b7 '+netYear,
+    (totalNet<0?'-':'+')+fmt(Math.abs(totalNet)),
+    'Income minus expenses, running from January. Above the zero line means ahead for the year.',
+    svg,
+    [...blds].sort((a,b)=>cum[b.id][lastM]-cum[a.id][lastM]).map(b=>({
+      label:b.label,color:b.color,
+      amount:(cum[b.id][lastM]<0?'-':'+')+fmt(Math.abs(cum[b.id][lastM]))}))));
+}
+
+/* ═══ WIRING — all additive listeners ═══════════════════════════════ */
+fillSrcSelect(document.getElementById('rev-src'));
+{const d=document.getElementById('rev-date'); if(d)d.value=today();}
+makeBldToggles('rev-bld-toggle',curRevBld,(id,cid)=>{
+  curRevBld=id; fltRevBld=id; updBldActive(cid,id); renderRevenue();
+},false);
+
+document.getElementById('rev-save-btn').addEventListener('click',addIncome);
+document.getElementById('rev-clear-btn').addEventListener('click',resetRevForm);
+document.getElementById('edit-inc-cancel-btn').addEventListener('click',closeEditIncomeModal);
+document.getElementById('edit-income-modal').addEventListener('click',function(e){
+  if(e.target===this)closeEditIncomeModal();
+});
+document.getElementById('edit-inc-save-btn').addEventListener('click',async()=>{
+  if(editingIncId==null)return;
+  const inc=incomeRows.find(r=>r.id===editingIncId);
+  if(!inc){closeEditIncomeModal();return;}
+  const src=document.getElementById('edit-inc-src').value;
+  const bld=parseInt(document.getElementById('edit-inc-bld').value,10);
+  const desc=sanitise(document.getElementById('edit-inc-desc').value,120);
+  const notes=sanitise(document.getElementById('edit-inc-notes').value,500);
+  if(!validBuildingId(bld)){showToast('Invalid building');return;}
+  const btn=document.getElementById('edit-inc-save-btn');
+  btn.textContent='Saving\u2026';btn.disabled=true;
+  try{
+    setSyncStatus('syncing');
+    const {error}=await sbClient.from('income')
+      .update({source:src,building:bld,description:desc,notes:notes})
+      .eq('id',editingIncId);
+    if(error)throw error;
+    inc.source=src;inc.building=bld;inc.description=desc;inc.notes=notes;
+    setSyncStatus('online');closeEditIncomeModal();renderRevenue();
+    showToast('\u2713 Income updated');
+  }catch(e){setSyncStatus('error');showToast('\u26a0 Update failed: '+e.message);}
+  finally{btn.textContent='Save Changes';btn.disabled=false;}
+});
+
+// Income deletes: a second listener. The existing handler skips its work
+// because pendingDelId is null whenever an income delete is pending.
+document.getElementById('confirm-yes').addEventListener('click',async()=>{
+  if(pendingIncDelId==null)return;
+  const id=pendingIncDelId; pendingIncDelId=null;
+  await deleteIncomeFromSupabase(id);
+  document.getElementById('confirm-modal').classList.remove('open');
+});
+document.getElementById('confirm-no').addEventListener('click',()=>{pendingIncDelId=null;});
+document.getElementById('confirm-modal').addEventListener('click',function(e){
+  if(e.target===this)pendingIncDelId=null;
+});
+
+// Duplicate flow: mirrors the expense handlers without replacing them
+document.getElementById('dup-review-btn').addEventListener('click',()=>{pendingIncome=null;});
+document.getElementById('dup-confirm-yes').addEventListener('click',()=>{
+  if(pendingIncome){const i=pendingIncome;pendingIncome=null;commitIncome(i);}
+});
+document.getElementById('dup-confirm-no').addEventListener('click',()=>{pendingIncome=null;});
+document.getElementById('dup-modal').addEventListener('click',function(e){
+  if(e.target===this)pendingIncome=null;
+});
+document.getElementById('dup-confirm-modal').addEventListener('click',function(e){
+  if(e.target===this)pendingIncome=null;
+});
+
+// The two new tabs. showTab() already handles screen switching generically;
+// these just add the render step afterwards.
+document.getElementById('tab-revenue').addEventListener('click',()=>{
+  showTab('revenue');
+  makeBldToggles('rev-bld-toggle',curRevBld,(id,cid)=>{
+    curRevBld=id; fltRevBld=id; updBldActive(cid,id); renderRevenue();
+  },false);
+  renderRevenue();
+});
+document.getElementById('tab-net').addEventListener('click',()=>{
+  showTab('net'); renderNet();
+});
+
+// Pick up income once the connection is live. bootConfig() is async and we
+// cannot hook its completion, so poll briefly until sbClient appears.
+(function waitForClient(tries){
+  if(typeof sbClient!=='undefined'&&sbClient){
+    loadIncomeFromSupabase().then(subscribeIncomeRealtime);
+    return;
+  }
+  if(tries>0)setTimeout(()=>waitForClient(tries-1),400);
+})(40);
+</script>
+
 </body>
 </html>
