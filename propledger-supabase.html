@@ -163,6 +163,27 @@
     box-shadow:0 2px 16px rgba(29,74,55,.22)}
   .net-banner{background:linear-gradient(135deg,#1a3a5c,#12283f);border-color:#0e2033;
     box-shadow:0 2px 16px rgba(26,58,92,.22)}
+  .mort-banner{background:linear-gradient(135deg,#6b2d5c,#451d3c);border-color:#38152f;
+    box-shadow:0 2px 16px rgba(107,45,92,.22)}
+  .sched-wrap{background:var(--card);border:1px solid var(--border);border-radius:var(--r);
+    box-shadow:var(--shadow);overflow:hidden;margin-bottom:14px}
+  .sched-head{display:grid;grid-template-columns:1.1fr 1fr 1fr 1.15fr;gap:4px;
+    padding:9px 12px;background:var(--ink);font-size:.62rem;font-weight:600;
+    letter-spacing:.05em;text-transform:uppercase;color:var(--gold-light);position:sticky;top:0}
+  .sched-body{max-height:420px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .sched-row{display:grid;grid-template-columns:1.1fr 1fr 1fr 1.15fr;gap:4px;
+    padding:8px 12px;border-top:1px solid var(--border);font-size:.74rem;
+    font-variant-numeric:tabular-nums}
+  .sched-row:nth-child(even){background:var(--paper)}
+  .sched-row.year-start{border-top:2px solid var(--gold)}
+  .sched-row.is-now{background:#fff8e6;font-weight:600}
+  .sched-row .r{text-align:right}
+  .sched-int{color:var(--rust)}
+  .sched-prin{color:var(--sage)}
+  .sched-summary{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--border)}
+  .sched-cell{background:var(--card);padding:11px 13px}
+  .sched-cell .l{font-size:.64rem;text-transform:uppercase;letter-spacing:.07em;color:var(--mid)}
+  .sched-cell .v{font-family:'DM Serif Display',serif;font-size:1.05rem;color:var(--ink);margin-top:2px}
   .rev-banner-t{font-family:'DM Serif Display',serif;font-size:1.35rem;color:#fff;line-height:1.1}
   .rev-banner-s{font-size:.76rem;color:rgba(255,255,255,.72);margin-top:3px}
   .rev-form{border-left:3px solid var(--sage)}
@@ -370,6 +391,7 @@
   <button class="tab-btn" id="tab-summary">Summary</button>
   <button class="tab-btn rev-tab" id="tab-revenue">↓ Revenue</button>
   <button class="tab-btn rev-tab" id="tab-net">⇄ Net</button>
+  <button class="tab-btn rev-tab" id="tab-mortgage">⌂ Mortgage</button>
   <button class="tab-btn" id="tab-settings">⚙</button>
 </div>
 
@@ -548,6 +570,8 @@
   <div id="net-by-property"></div>
   <div class="section-title">Cumulative Through the Year</div>
   <div id="net-cum-chart"></div>
+  <div class="section-title">Monthly Inflows</div>
+  <div id="net-income-chart"></div>
 </div>
 
 <!-- Edit income modal -->
@@ -603,6 +627,62 @@
       <button class="modal-btn primary" id="edit-save-btn">Save Changes</button>
       <button class="modal-btn" id="edit-cancel-btn" style="background:var(--cream);color:var(--ink)">Cancel</button>
     </div>
+  </div>
+</div>
+
+<div id="screen-mortgage" class="screen scrollable">
+  <div class="rev-banner mort-banner">
+    <div class="rev-banner-t">Mortgages</div>
+    <div class="rev-banner-s">Set the terms once. Interest posts itself each month.</div>
+  </div>
+  <div id="mortgage-panel"></div>
+  <div class="section-title">Amortisation Schedule</div>
+  <div class="rev-field-label">Property</div>
+  <div class="building-toggle" id="mort-sched-toggle"></div>
+  <div id="mortgage-schedule"></div>
+</div>
+
+<!-- Mortgage setup modal -->
+<div class="modal-overlay" id="mortgage-modal" role="dialog" aria-modal="true">
+  <div class="modal-box">
+    <div class="modal-title" id="mort-modal-title">Mortgage</div>
+    <div id="mort-modal-sub" style="font-size:.8rem;color:var(--mid);margin-bottom:14px"></div>
+    <div class="form-row">
+      <label>Original Loan Amount ($)</label>
+      <input type="number" id="mort-amount" step="0.01" min="0" inputmode="decimal" placeholder="e.g. 320000">
+      <div class="field-error" id="err-mort-amount">Enter the amount borrowed</div>
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label>Interest Rate (% / yr)</label>
+        <input type="number" id="mort-rate" step="0.01" min="0" max="25" inputmode="decimal" placeholder="5.25">
+        <div class="field-error" id="err-mort-rate">Enter a rate</div>
+      </div>
+      <div class="form-row">
+        <label>Amortisation (years)</label>
+        <input type="number" id="mort-years" step="1" min="1" max="40" inputmode="numeric" placeholder="25">
+        <div class="field-error" id="err-mort-years">Enter the term</div>
+      </div>
+    </div>
+    <div class="form-row">
+      <label>First Payment Date</label>
+      <input type="date" id="mort-start">
+      <div class="field-error" id="err-mort-start">Select a date</div>
+      <div style="font-size:.68rem;color:var(--mid);margin-top:4px">Needed to know how far into the schedule you are, and therefore this month's split.</div>
+    </div>
+    <div class="form-row">
+      <label>Compounding</label>
+      <select id="mort-comp">
+        <option value="monthly">Monthly</option>
+        <option value="semi">Semi-annually (Canadian lender convention)</option>
+      </select>
+    </div>
+    <div id="mort-preview" style="font-size:.78rem;background:var(--paper);border:1px solid var(--border);border-radius:8px;padding:11px 13px;line-height:1.6;color:var(--ink)"></div>
+    <div class="modal-actions">
+      <button class="modal-btn primary" id="mort-save-btn">Save &amp; Activate</button>
+      <button class="modal-btn" id="mort-cancel-btn" style="background:var(--cream);color:var(--ink)">Cancel</button>
+    </div>
+    <button class="btn-secondary" id="mort-remove-btn" type="button" style="border-color:var(--rust);color:var(--rust)">Remove mortgage from this property</button>
   </div>
 </div>
 
@@ -2885,6 +2965,456 @@ function subscribeIncomeRealtime(){
     .subscribe();
 }
 
+/* ═══════════════════════════════════════════════════════════════════
+   MORTGAGES
+   Configure the loan once per property; the app works out each month's
+   interest and principal and posts the interest as an expense.
+
+   Only the interest is posted. Principal repayment is not a deductible
+   expense — it repays borrowed capital — so posting the whole payment
+   would overstate expenses and distort the tax export. The principal is
+   shown in the panel instead.
+   ═══════════════════════════════════════════════════════════════════ */
+const MORT_KEY='propledger_mortgages';
+
+function loadMortgages(){
+  try{
+    const raw=localStorage.getItem(MORT_KEY);
+    if(!raw)return {};
+    const p=JSON.parse(raw);
+    return (p&&typeof p==='object')?p:{};
+  }catch{ return {}; }
+}
+function saveMortgages(m){
+  try{ localStorage.setItem(MORT_KEY,JSON.stringify(m)); return true; }
+  catch{ showToast('\u26a0 Could not save mortgage settings'); return false; }
+}
+function mortgageFor(bid){ const m=loadMortgages(); return m[String(bid)]||null; }
+
+// Canadian fixed mortgages compound semi-annually, not monthly. Using j/12
+// overstates the interest, so the periodic rate is converted:
+//   i = (1 + j/2)^(2/12) - 1
+function mortPeriodicRate(cfg){
+  const j=(Number(cfg.rate)||0)/100;
+  if(j<=0)return 0;
+  // Monthly by default. 'semi' remains available: Canadian fixed mortgages
+  // are legally quoted with semi-annual compounding, which gives a slightly
+  // lower periodic rate than j/12.
+  return cfg.comp==='semi' ? Math.pow(1+j/2, 1/6)-1 : j/12;
+}
+function mortPayment(cfg){
+  const i=mortPeriodicRate(cfg), n=Math.max(1,Math.round((cfg.years||25)*12));
+  if(i<=0)return (cfg.amount||0)/n;
+  return (cfg.amount||0)*i/(1-Math.pow(1+i,-n));
+}
+// Split for the k-th payment (0-based) counting from the first payment
+function mortSplitAt(cfg,k){
+  const i=mortPeriodicRate(cfg), pay=mortPayment(cfg);
+  const n=Math.max(1,Math.round((cfg.years||25)*12));
+  if(k<0||k>=n)return null;                    // outside the loan's life
+  let bal=Number(cfg.amount)||0;
+  for(let x=0;x<k;x++){
+    const int=bal*i;
+    bal-=Math.max(0,pay-int);
+    if(bal<=0){bal=0;break;}
+  }
+  if(bal<=0)return null;                        // already paid off
+  const interest=bal*i;
+  let principal=pay-interest;
+  if(principal>bal)principal=bal;               // final payment
+  return {payment:Math.round((interest+principal)*100)/100,
+          interest:Math.round(interest*100)/100,
+          principal:Math.round(principal*100)/100,
+          balanceBefore:Math.round(bal*100)/100,
+          balanceAfter:Math.round(Math.max(0,bal-principal)*100)/100};
+}
+// How many payments have elapsed between the start date and a given month
+function mortIndexFor(cfg,year,month){
+  if(!cfg.start)return -1;
+  const sy=parseInt(String(cfg.start).slice(0,4),10);
+  const sm=parseInt(String(cfg.start).slice(5,7),10)-1;
+  return (year-sy)*12+(month-sm);
+}
+// The payment day, clamped to months that are too short for it
+function mortDateFor(cfg,year,month){
+  const day=parseInt(String(cfg.start).slice(8,10),10)||1;
+  const last=new Date(year,month+1,0).getDate();
+  return year+'-'+String(month+1).padStart(2,'0')+'-'+
+         String(Math.min(day,last)).padStart(2,'0');
+}
+// A deterministic id, so the same month can never post twice — a repeat
+// insert collides on the primary key and is simply ignored. Sits well
+// above the Date.now() range used by manual entries, so no overlap.
+function mortRowId(bid,year,month){
+  return 8000000000000 + (bid*1000000) + (year*100) + month;
+}
+
+async function autoPostMortgages(year){
+  if(!sbClient)return 0;
+  const conf=loadMortgages();
+  const now=new Date(), cy=now.getFullYear(), cm=now.getMonth();
+  let posted=0;
+  for(const key of Object.keys(conf)){
+    const bid=parseInt(key,10);
+    const cfg=conf[key];
+    if(!cfg||!cfg.active||!validBuildingId(bid))continue;
+    const lastMonth = (year<cy) ? 11 : (year>cy ? -1 : cm);
+    for(let m=0;m<=lastMonth;m++){
+      const k=mortIndexFor(cfg,year,m);
+      if(k<0)continue;                       // before the loan started
+      const split=mortSplitAt(cfg,k);
+      if(!split||split.interest<=0)continue; // past the end, or paid off
+      const id=mortRowId(bid,year,m);
+      if(expenses.some(e=>e.id===id))continue;
+      const row={id,building:bid,category:'Mortgage Interest',grp:'Finance',
+        amount:split.interest,date:mortDateFor(cfg,year,m),
+        description:'Mortgage interest \u2014 auto',
+        notes:'Payment '+fmt(split.payment)+' = interest '+fmt(split.interest)+
+              ' + principal '+fmt(split.principal)+
+              '. Balance after: '+fmt(split.balanceAfter)+'.',
+        receipt_url:null};
+      try{
+        const {error}=await sbClient.from('expenses').insert(row);
+        // 23505 = already there. Another device beat us to it; not an error.
+        if(error && error.code!=='23505') continue;
+        if(!error){
+          expenses.unshift({id,building:bid,category:row.category,group:row.grp,
+            amount:row.amount,date:row.date,description:row.description,
+            notes:row.notes,receipt:null});
+          posted++;
+        }
+      }catch{}
+    }
+  }
+  if(posted){
+    renderExpenses(); renderSummary(); buildCatFilter();
+    showToast('\u2713 Posted '+posted+' mortgage interest entr'+(posted===1?'y':'ies'));
+  }
+  return posted;
+}
+
+/* ── the full amortisation schedule ───────────────────────────────── */
+// Walks every payment from commencement to the end of the term, which is
+// what actually determines each month's split.
+function mortSchedule(cfg){
+  const i=mortPeriodicRate(cfg);
+  const n=Math.max(1,Math.round((cfg.years||25)*12));
+  const pay=mortPayment(cfg);
+  const sy=parseInt(String(cfg.start).slice(0,4),10);
+  const sm=parseInt(String(cfg.start).slice(5,7),10)-1;
+  let bal=Number(cfg.amount)||0;
+  const rows=[]; let totInt=0, totPrin=0;
+  for(let k=0;k<n&&bal>0.005;k++){
+    const interest=bal*i;
+    let principal=pay-interest;
+    if(principal>bal)principal=bal;       // final payment trims to the balance
+    const y=sy+Math.floor((sm+k)/12), m=(sm+k)%12;
+    bal=Math.max(0,bal-principal);
+    totInt+=interest; totPrin+=principal;
+    rows.push({k,year:y,month:m,date:mortDateFor(cfg,y,m),
+      payment:Math.round((interest+principal)*100)/100,
+      interest:Math.round(interest*100)/100,
+      principal:Math.round(principal*100)/100,
+      balance:Math.round(bal*100)/100});
+  }
+  return {rows,payment:Math.round(pay*100)/100,
+    totalInterest:Math.round(totInt*100)/100,
+    totalPrincipal:Math.round(totPrin*100)/100,
+    totalPaid:Math.round((totInt+totPrin)*100)/100,
+    months:rows.length};
+}
+
+let schedBid=null;
+function renderMortgageSchedule(){
+  const host=document.getElementById('mortgage-schedule');
+  if(!host)return;
+  host.innerHTML='';
+  const blds=getBuildings();
+  if(schedBid===null||!validBuildingId(schedBid)){
+    const withM=blds.find(b=>{const m=mortgageFor(b.id);return m&&m.active;});
+    schedBid=withM?withM.id:(blds[0]?blds[0].id:1);
+  }
+  makeBldToggles('mort-sched-toggle',schedBid,(id,cid)=>{
+    schedBid=id; updBldActive(cid,id); renderMortgageSchedule();
+  },false);
+
+  const cfg=mortgageFor(schedBid);
+  if(!cfg||!cfg.active){
+    const e=document.createElement('div');e.className='empty-state';
+    e.innerHTML='<div class="es-icon">\ud83c\udfe6</div>';
+    const p=document.createElement('p');
+    setText(p,'No mortgage set up for this property yet.');
+    e.appendChild(p);host.appendChild(e);return;
+  }
+
+  const s=mortSchedule(cfg);
+  const now=new Date(), cy=now.getFullYear(), cm=now.getMonth();
+
+  // headline figures
+  const sum=document.createElement('div');
+  sum.className='sched-wrap';
+  const grid=document.createElement('div');grid.className='sched-summary';
+  [['Monthly payment',fmt(s.payment)],
+   ['Total interest',fmt(s.totalInterest)],
+   ['Principal repaid',fmt(s.totalPrincipal)],
+   ['Total paid',fmt(s.totalPaid)]].forEach(([l,v])=>{
+    const cell=document.createElement('div');cell.className='sched-cell';
+    const L=document.createElement('div');L.className='l';setText(L,l);
+    const V=document.createElement('div');V.className='v';setText(V,v);
+    cell.append(L,V);grid.appendChild(cell);
+  });
+  sum.appendChild(grid);
+  host.appendChild(sum);
+
+  const note=document.createElement('div');
+  note.style.cssText='font-size:.72rem;color:var(--mid);margin:-6px 0 12px;line-height:1.55';
+  note.textContent=fmt(cfg.amount)+' at '+cfg.rate+'% over '+cfg.years+
+    ' years from '+cfg.start+' \u00b7 '+s.months+' payments \u00b7 '+
+    (cfg.comp==='semi'?'semi-annual':'monthly')+' compounding';
+  host.appendChild(note);
+
+  // the table
+  const wrap=document.createElement('div');wrap.className='sched-wrap';
+  const head=document.createElement('div');head.className='sched-head';
+  ['Date','Interest','Principal','Balance'].forEach((h,idx)=>{
+    const d=document.createElement('div');
+    if(idx>0)d.className='r';
+    setText(d,h);head.appendChild(d);
+  });
+  wrap.appendChild(head);
+  const body=document.createElement('div');body.className='sched-body';
+  s.rows.forEach(r=>{
+    const row=document.createElement('div');
+    row.className='sched-row'+(r.month===0?' year-start':'')+
+      ((r.year===cy&&r.month===cm)?' is-now':'');
+    const d=document.createElement('div');
+    setText(d,MONTH_NAMES[r.month]+' '+r.year);
+    const i2=document.createElement('div');i2.className='r sched-int';
+    setText(i2,fmt(r.interest));
+    const p2=document.createElement('div');p2.className='r sched-prin';
+    setText(p2,fmt(r.principal));
+    const b2=document.createElement('div');b2.className='r';
+    setText(b2,fmt(r.balance));
+    row.append(d,i2,p2,b2);body.appendChild(row);
+  });
+  wrap.appendChild(body);
+  host.appendChild(wrap);
+
+  const legend=document.createElement('div');
+  legend.style.cssText='font-size:.72rem;color:var(--mid);line-height:1.6;padding:2px 2px 0';
+  legend.innerHTML='Interest is shown in <span style="color:var(--rust)">red</span>, '+
+    'principal in <span style="color:var(--sage)">green</span>. The current month is '+
+    'highlighted. Only the interest column is treated as a deductible expense.';
+  host.appendChild(legend);
+}
+
+/* ── mortgage panel + setup modal ─────────────────────────────────── */
+let mortEditBid=null;
+
+function renderMortgagePanel(){
+  const host=document.getElementById('mortgage-panel');
+  if(!host)return;
+  host.innerHTML='';
+  const conf=loadMortgages();
+  const now=new Date(), cy=now.getFullYear(), cm=now.getMonth();
+
+  getBuildings().forEach(b=>{
+    const cfg=conf[String(b.id)];
+    const card=document.createElement('div');
+    card.className='bld-summary-card';
+    const hdr=document.createElement('div');
+    hdr.className='bsc-header';hdr.style.background=b.color;
+    const t=document.createElement('div');t.className='bsc-title';
+    setText(t,b.icon+' '+b.label);
+    const v=document.createElement('div');v.className='bsc-total';v.style.color='#fff';
+    hdr.append(t,v);card.appendChild(hdr);
+
+    if(!cfg||!cfg.active){
+      setText(v,'\u2014');
+      const r=document.createElement('div');r.className='cat-row';
+      const s=document.createElement('span');
+      s.style.cssText='color:var(--mid);font-size:.8rem';
+      setText(s,'No mortgage configured');
+      r.appendChild(s);card.appendChild(r);
+    }else{
+      const k=mortIndexFor(cfg,cy,cm);
+      const split=mortSplitAt(cfg,k);
+      setText(v, split?fmt(split.payment)+'/mo':'Paid off');
+      if(split){
+        const line=(label,val,hint)=>{
+          const r=document.createElement('div');r.className='cat-row';
+          const nd=document.createElement('div');nd.className='cat-row-name';
+          setText(nd,label);
+          if(hint){
+            const h=document.createElement('span');h.className='cat-row-count';
+            setText(h,hint);nd.appendChild(h);
+          }
+          const av=document.createElement('div');av.className='cat-row-amt';
+          setText(av,fmt(val));
+          r.append(nd,av);return r;
+        };
+        card.appendChild(line('Interest this month',split.interest,'posted as an expense'));
+        card.appendChild(line('Principal this month',split.principal,'not deductible'));
+        card.appendChild(line('Balance remaining',split.balanceAfter,
+          'payment '+(k+1)+' of '+Math.round(cfg.years*12)));
+      }else{
+        const r=document.createElement('div');r.className='cat-row';
+        const s=document.createElement('span');
+        s.style.cssText='color:var(--mid);font-size:.8rem';
+        setText(s, mortIndexFor(cfg,cy,cm)<0
+          ? 'Starts '+cfg.start : 'Fully repaid');
+        r.appendChild(s);card.appendChild(r);
+      }
+    }
+    const act=document.createElement('div');
+    act.style.cssText='padding:10px 14px';
+    const btn=document.createElement('button');
+    btn.type='button';btn.className='btn-secondary';btn.style.marginTop='0';
+    setText(btn, (cfg&&cfg.active)?'Edit mortgage':'Set up mortgage');
+    btn.addEventListener('click',()=>openMortgageModal(b.id));
+    act.appendChild(btn);card.appendChild(act);
+    host.appendChild(card);
+  });
+
+  const note=document.createElement('div');
+  note.className='chart-note';
+  note.style.cssText='font-size:.72rem;color:var(--mid);line-height:1.6;padding:4px 2px 0';
+  note.innerHTML='Interest is posted automatically each month as a <strong>Mortgage Interest</strong> '+
+    'expense, and appears on the Expenses and Summary tabs. Principal is shown here but not posted \u2014 '+
+    'repaying capital is not a deductible expense. Settings are stored on this device.';
+  host.appendChild(note);
+}
+
+function mortPreview(){
+  const el=document.getElementById('mort-preview');
+  if(!el)return;
+  const cfg={
+    amount:parseFloat(document.getElementById('mort-amount').value)||0,
+    rate:parseFloat(document.getElementById('mort-rate').value)||0,
+    years:parseFloat(document.getElementById('mort-years').value)||0,
+    comp:document.getElementById('mort-comp').value==='semi'?'semi':'monthly',
+    start:document.getElementById('mort-start').value,
+  };
+  if(!(cfg.amount>0&&cfg.rate>=0&&cfg.years>0)){
+    setText(el,'Fill in the amount, rate and term to see the monthly split.');
+    return;
+  }
+  const pay=mortPayment(cfg);
+  const first=mortSplitAt(cfg,0);
+  el.innerHTML='';
+  const l1=document.createElement('div');
+  l1.innerHTML='<strong>'+fmt(pay)+'</strong> per month';
+  el.appendChild(l1);
+  if(first){
+    const l2=document.createElement('div');
+    l2.style.cssText='color:var(--mid);margin-top:3px';
+    setText(l2,'First payment: '+fmt(first.interest)+' interest + '+
+      fmt(first.principal)+' principal');
+    el.appendChild(l2);
+    const l3=document.createElement('div');
+    l3.style.cssText='color:var(--mid);margin-top:3px';
+    setText(l3,'Only the interest is recorded as an expense.');
+    el.appendChild(l3);
+  }
+}
+
+function openMortgageModal(bid){
+  mortEditBid=bid;
+  const b=getBuildings().find(x=>x.id===bid);
+  const cfg=mortgageFor(bid);
+  setText(document.getElementById('mort-modal-title'),
+    (cfg&&cfg.active)?'Edit Mortgage':'Set Up Mortgage');
+  setText(document.getElementById('mort-modal-sub'), b?b.label:'');
+  document.getElementById('mort-amount').value=cfg?cfg.amount:'';
+  document.getElementById('mort-rate').value=cfg?cfg.rate:'';
+  document.getElementById('mort-years').value=cfg?cfg.years:'';
+  document.getElementById('mort-start').value=cfg?cfg.start:'';
+  document.getElementById('mort-comp').value=cfg&&cfg.comp==='semi'?'semi':'monthly';
+  ['err-mort-amount','err-mort-rate','err-mort-years','err-mort-start']
+    .forEach(id=>{const e=document.getElementById(id);if(e)e.style.display='none';});
+  document.getElementById('mort-remove-btn').style.display=
+    (cfg&&cfg.active)?'block':'none';
+  mortPreview();
+  document.getElementById('mortgage-modal').classList.add('open');
+}
+function closeMortgageModal(){
+  mortEditBid=null;
+  document.getElementById('mortgage-modal').classList.remove('open');
+}
+
+['mort-amount','mort-rate','mort-years','mort-start'].forEach(id=>{
+  document.getElementById(id).addEventListener('input',mortPreview);
+});
+document.getElementById('mort-comp').addEventListener('change',mortPreview);
+document.getElementById('mort-cancel-btn').addEventListener('click',closeMortgageModal);
+document.getElementById('mortgage-modal').addEventListener('click',function(e){
+  if(e.target===this)closeMortgageModal();
+});
+
+document.getElementById('mort-save-btn').addEventListener('click',async()=>{
+  if(mortEditBid==null)return;
+  const amount=parseFloat(document.getElementById('mort-amount').value);
+  const rate=parseFloat(document.getElementById('mort-rate').value);
+  const years=parseFloat(document.getElementById('mort-years').value);
+  const start=document.getElementById('mort-start').value;
+  const comp=document.getElementById('mort-comp').value==='semi'?'semi':'monthly';
+  const bad=(id,show)=>{const e=document.getElementById(id);if(e)e.style.display=show?'block':'none';};
+  let ok=true;
+  if(!(Number.isFinite(amount)&&amount>0&&amount<=99999999)){bad('err-mort-amount',1);ok=false;}else bad('err-mort-amount',0);
+  if(!(Number.isFinite(rate)&&rate>=0&&rate<=25)){bad('err-mort-rate',1);ok=false;}else bad('err-mort-rate',0);
+  if(!(Number.isFinite(years)&&years>=1&&years<=40)){bad('err-mort-years',1);ok=false;}else bad('err-mort-years',0);
+  if(!validDate(start)){bad('err-mort-start',1);ok=false;}else bad('err-mort-start',0);
+  if(!ok)return;
+
+  const conf=loadMortgages();
+  conf[String(mortEditBid)]={active:true,amount:Math.round(amount*100)/100,
+    rate,years,start,comp};
+  if(!saveMortgages(conf))return;
+  const btn=document.getElementById('mort-save-btn');
+  btn.textContent='Posting\u2026';btn.disabled=true;
+  closeMortgageModal();
+  await autoPostMortgages(netYear||new Date().getFullYear());
+  btn.textContent='Save & Activate';btn.disabled=false;
+  renderMortgagePanel(); renderMortgageSchedule(); renderNet();
+  showToast('\u2713 Mortgage active');
+});
+
+document.getElementById('mort-remove-btn').addEventListener('click',()=>{
+  if(mortEditBid==null)return;
+  const conf=loadMortgages();
+  delete conf[String(mortEditBid)];
+  saveMortgages(conf);
+  closeMortgageModal();
+  renderMortgagePanel(); renderMortgageSchedule();
+  showToast('Mortgage removed \u2014 entries already posted are kept');
+});
+
+// Principal repaid during a year, per property. Taken from the schedule
+// rather than from expense rows, because principal is deliberately not an
+// expense — it repays capital. It still leaves the bank account though,
+// so the cash view has to account for it.
+function principalByBuilding(year){
+  const out={};
+  getBuildings().forEach(b=>{out[b.id]=0;});
+  const conf=loadMortgages();
+  Object.keys(conf).forEach(key=>{
+    const bid=parseInt(key,10);
+    const cfg=conf[key];
+    if(!cfg||!cfg.active||!validBuildingId(bid))return;
+    const now=new Date(), cy=now.getFullYear(), cm=now.getMonth();
+    const lastM=(year<cy)?11:(year>cy?-1:cm);
+    let tot=0;
+    for(let m=0;m<=lastM;m++){
+      const k=mortIndexFor(cfg,year,m);
+      if(k<0)continue;
+      const s=mortSplitAt(cfg,k);
+      if(s)tot+=s.principal;
+    }
+    out[bid]=(out[bid]||0)+Math.round(tot*100)/100;
+  });
+  return out;
+}
+
 /* ═══ NET ═══════════════════════════════════════════════════════════ */
 function netByBuilding(year){
   const out={};
@@ -2897,6 +3427,83 @@ function netByBuilding(year){
     out[r.building].inc+=r.amount;});
   return out;
 }
+// Plain monthly inflow, deliberately NOT cumulative — each bar is just
+// what came in that month, so a quiet month reads as a short bar rather
+// than a flat line.
+function monthlyIncomeByBuilding(year){
+  const out={};
+  getBuildings().forEach(b=>{out[b.id]=Array(12).fill(0);});
+  incomeRows.filter(r=>expYear(r)===year).forEach(r=>{
+    const m=expMonth(r);
+    if(m>=0&&m<12){
+      if(!out[r.building])out[r.building]=Array(12).fill(0);
+      out[r.building][m]+=r.amount;
+    }
+  });
+  Object.keys(out).forEach(k=>{
+    out[k]=out[k].map(v=>Math.round(v*100)/100);
+  });
+  return out;
+}
+
+function renderIncomeCharts(){
+  const host=document.getElementById('net-income-chart');
+  if(!host)return;
+  host.innerHTML='';
+  const mi=monthlyIncomeByBuilding(netYear);
+  const blds=getBuildings().filter(b=>mi[b.id]&&mi[b.id].some(v=>v>0));
+  if(!blds.length){
+    const e=document.createElement('div');e.className='empty-state';
+    e.innerHTML='<div class="es-icon">\ud83d\udcb5</div>';
+    const p=document.createElement('p');
+    setText(p,'No income recorded for '+netYear+' yet.');
+    e.appendChild(p);host.appendChild(e);return;
+  }
+  const lastM=lastVisibleMonth(netYear);
+  const yearTotal=blds.reduce((s,b)=>s+mi[b.id].reduce((t,v)=>t+v,0),0);
+
+  // ── all properties, stacked by month ──
+  const monthTotals=Array(12).fill(0);
+  blds.forEach(b=>{for(let m=0;m<12;m++)monthTotals[m]+=mi[b.id][m];});
+  const peakMonth=Math.max(...monthTotals,1);
+  const series=blds.map(b=>({label:b.label,color:b.color,vals:mi[b.id]}));
+  const key=[...blds].sort((a,b)=>
+      mi[b.id].reduce((s,v)=>s+v,0)-mi[a.id].reduce((s,v)=>s+v,0))
+    .map(b=>({label:b.label,color:b.color,
+      amount:fmt(mi[b.id].reduce((s,v)=>s+v,0))}));
+  const best=monthTotals.indexOf(Math.max(...monthTotals));
+  host.appendChild(chartCard(
+    'All properties \u00b7 '+netYear, fmt(yearTotal),
+    'What came in each month, stacked by property. Best month so far: '+
+      MONTH_NAMES[best]+' at '+fmt(monthTotals[best])+'.',
+    buildCumSvg(series,peakMonth,170,lastM), key));
+
+  // ── one per property, shared scale so they compare ──
+  if(blds.length>1){
+    const hd=document.createElement('div');
+    hd.className='section-title';
+    setText(hd,'Each Property');
+    host.appendChild(hd);
+    const note=document.createElement('div');
+    note.style.cssText='font-size:.7rem;color:var(--mid);margin:-4px 0 10px';
+    setText(note,'All on the same scale, so heights are directly comparable.');
+    host.appendChild(note);
+    const biggest=Math.max(...blds.map(b=>Math.max(...mi[b.id])),1);
+    [...blds].sort((a,b)=>
+      mi[b.id].reduce((s,v)=>s+v,0)-mi[a.id].reduce((s,v)=>s+v,0)
+    ).forEach(b=>{
+      const tot=mi[b.id].reduce((s,v)=>s+v,0);
+      const months=mi[b.id].slice(0,lastM+1).filter(v=>v>0).length;
+      const share=yearTotal>0?Math.round(tot/yearTotal*100):0;
+      host.appendChild(chartCard(
+        b.label, fmt(tot),
+        share+'% of income \u00b7 received in '+months+' month'+(months!==1?'s':''),
+        buildCumSvg([{label:b.label,color:b.color,vals:mi[b.id]}],biggest,130,lastM),
+        null));
+    });
+  }
+}
+
 function cumulativeNet(year){
   const out={};
   getBuildings().forEach(b=>{out[b.id]=Array(12).fill(0);});
@@ -2943,9 +3550,12 @@ function renderNet(){
   renderNetYearBar();
 
   const nb=netByBuilding(netYear);
-  let totInc=0,totExp=0;
+  const prin=principalByBuilding(netYear);
+  let totInc=0,totExp=0,totPrin=0;
   Object.values(nb).forEach(v=>{totInc+=v.inc;totExp+=v.exp;});
-  const net=totInc-totExp;
+  Object.values(prin).forEach(v=>{totPrin+=v;});
+  const net=totInc-totExp;              // taxable
+  const cash=net-totPrin;               // what actually moved
 
   const ov=document.getElementById('net-overall');
   ov.innerHTML='';
@@ -2955,27 +3565,60 @@ function renderNet(){
   setText(ht,'All Properties \u00b7 '+netYear);
   const hv=document.createElement('div');hv.className='bsc-total';
   hv.style.color=net<0?'#e17055':'#c9a84c';
-  setText(hv,(net<0?'-':'+')+fmt(Math.abs(net)));
+  hv.style.color=cash<0?'#e17055':'#c9a84c';
+  setText(hv,(cash<0?'-':'+')+fmt(Math.abs(cash)));
   hdr.append(ht,hv);card.appendChild(hdr);
   card.appendChild(netLine('Total Income',totInc));
-  card.appendChild(netLine('Total Expenses',-totExp));
-  card.appendChild(netLine('Net',net,true));
+  card.appendChild(netLine('Deductible Expenses',-totExp));
+  if(totPrin>0){
+    card.appendChild(netLine('Mortgage Principal',-totPrin));
+    card.appendChild(netLine('Net Cash',cash,true));
+    const t=document.createElement('div');
+    t.className='cat-row';
+    const n1=document.createElement('div');n1.className='cat-row-name';
+    setText(n1,'Net for Tax');
+    const h=document.createElement('span');h.className='cat-row-count';
+    setText(h,'principal excluded');
+    n1.appendChild(h);
+    const a1=document.createElement('div');a1.className='cat-row-amt';
+    a1.style.color=net<0?'var(--rust)':'#1e8449';
+    setText(a1,(net<0?'-':'+')+fmt(Math.abs(net)));
+    t.append(n1,a1);card.appendChild(t);
+  }else{
+    card.appendChild(netLine('Net',net,true));
+  }
   ov.appendChild(card);
 
   const byP=document.getElementById('net-by-property');
   byP.innerHTML='';
   getBuildings().forEach(b=>{
     const v=nb[b.id]||{inc:0,exp:0};
-    if(v.inc===0&&v.exp===0)return;
+    if(v.inc===0&&v.exp===0&&!(prin[b.id]>0))return;
     const c=document.createElement('div');c.className='bld-summary-card';
     const h=document.createElement('div');h.className='bsc-header';h.style.background=b.color;
     const t=document.createElement('div');t.className='bsc-title';setText(t,b.icon+' '+b.label);
-    const pn=v.inc-v.exp;
+    const pp=prin[b.id]||0;
+    const pn=v.inc-v.exp;                 // taxable
+    const pc=pn-pp;                       // cash
     const pv=document.createElement('div');pv.className='bsc-total';pv.style.color='#fff';
-    setText(pv,(pn<0?'-':'+')+fmt(Math.abs(pn)));
+    setText(pv,(pc<0?'-':'+')+fmt(Math.abs(pc)));
     h.append(t,pv);c.appendChild(h);
     c.appendChild(netLine('Income',v.inc));
-    c.appendChild(netLine('Expenses',-v.exp));
+    c.appendChild(netLine('Deductible Expenses',-v.exp));
+    if(pp>0){
+      c.appendChild(netLine('Mortgage Principal',-pp));
+      c.appendChild(netLine('Net Cash',pc,true));
+      const r2=document.createElement('div');r2.className='cat-row';
+      const n2=document.createElement('div');n2.className='cat-row-name';
+      setText(n2,'Net for Tax');
+      const h2=document.createElement('span');h2.className='cat-row-count';
+      setText(h2,'principal excluded');
+      n2.appendChild(h2);
+      const a2=document.createElement('div');a2.className='cat-row-amt';
+      a2.style.color=pn<0?'var(--rust)':'#1e8449';
+      setText(a2,(pn<0?'-':'+')+fmt(Math.abs(pn)));
+      r2.append(n2,a2);c.appendChild(r2);
+    }
     byP.appendChild(c);
   });
   if(!byP.children.length){
@@ -2987,6 +3630,16 @@ function renderNet(){
 
   // ── cumulative net line chart: can go negative, so it needs a
   //    signed scale and its own zero line rather than reusing the bars
+  if(totPrin>0){
+    const exp=document.createElement('div');
+    exp.className='chart-note';
+    exp.style.cssText='font-size:.72rem;color:var(--mid);line-height:1.6;padding:0 2px 10px';
+    exp.innerHTML='<strong>Net Cash</strong> is what actually left the bank, including the '+
+      'principal part of every mortgage payment. <strong>Net for Tax</strong> excludes it, '+
+      'because repaying capital is not a deductible expense. Only interest reaches the '+
+      'Expenses tab and the CSV export.';
+    document.getElementById('net-by-property').appendChild(exp);
+  }
   const host=document.getElementById('net-cum-chart');
   host.innerHTML='';
   const cum=cumulativeNet(netYear);
@@ -2995,7 +3648,9 @@ function renderNet(){
     const e=document.createElement('div');e.className='empty-state';
     e.innerHTML='<div class="es-icon">\ud83d\udcc9</div>';
     const p=document.createElement('p');setText(p,'Nothing to chart yet.');
-    e.appendChild(p);host.appendChild(e);return;
+    e.appendChild(p);host.appendChild(e);
+    renderIncomeCharts();
+    return;
   }
   const lastM=lastVisibleMonth(netYear);
   const finals=blds.map(b=>cum[b.id][lastM]);
@@ -3120,6 +3775,8 @@ function renderNet(){
       ? 'Income minus expenses, running from January. The dashed black line is the whole portfolio combined.'
       : 'Income minus expenses, running from January. Above the zero line means ahead for the year.',
     svg, legend));
+
+  renderIncomeCharts();
 }
 
 /* ═══ WIRING — all additive listeners ═══════════════════════════════ */
@@ -3224,8 +3881,20 @@ document.getElementById('tab-revenue').addEventListener('click',()=>{
   // Running the SQL then opening this tab is enough to clear the warning.
   if(incomeTableMissing&&sbClient) refreshIncomeConnection();
 });
+document.getElementById('tab-mortgage').addEventListener('click',()=>{
+  showTab('mortgage');
+  renderMortgagePanel();
+  renderMortgageSchedule();
+  autoPostMortgages(new Date().getFullYear()).then(nPosted=>{
+    if(nPosted){renderMortgagePanel();renderMortgageSchedule();}
+  });
+});
 document.getElementById('tab-net').addEventListener('click',()=>{
   showTab('net'); renderNet();
+  // catch up any months that have begun since the app was last opened
+  autoPostMortgages(netYear||new Date().getFullYear()).then(nPosted=>{
+    if(nPosted)renderNet();
+  });
 });
 
 // Pick up income once the connection is live. bootConfig() is async and we
@@ -3233,6 +3902,7 @@ document.getElementById('tab-net').addEventListener('click',()=>{
 (function waitForClient(tries){
   if(typeof sbClient!=='undefined'&&sbClient){
     loadIncomeFromSupabase().then(subscribeIncomeRealtime);
+    setTimeout(()=>autoPostMortgages(new Date().getFullYear()),1500);
     return;
   }
   if(tries>0)setTimeout(()=>waitForClient(tries-1),400);
