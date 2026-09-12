@@ -491,6 +491,8 @@
     revenue SQL</em>), then reconnect. Use that shorter block, not the full script —
     re-running the full one on an existing project can deadlock. Until this is done,
     income cannot be saved.
+    <div id="rev-probe-detail" style="display:none;margin-top:10px;padding:10px 12px;
+      background:#fff;border:1px solid var(--border);border-radius:8px"></div>
     <button type="button" id="rev-recheck-btn"
       style="display:block;margin-top:10px;background:var(--rust);border:none;color:#fff;
       font-family:'DM Sans',sans-serif;font-size:.76rem;font-weight:600;padding:8px 14px;
@@ -2596,6 +2598,28 @@ function showRevErr(id,show){
 function revWarn(){
   const w=document.getElementById('rev-setup-warn');
   if(w)w.style.display=incomeTableMissing?'block':'none';
+  const d=document.getElementById('rev-probe-detail');
+  if(!d)return;
+  if(!incomeTableMissing||!incomeProbeError){d.style.display='none';return;}
+  d.style.display='block';
+  const code=incomeProbeError.code||'', msg=incomeProbeError.message||'';
+  // PGRST205 = the table exists but Supabase's API has not picked it up yet.
+  // That is a cache refresh, not a missing table, and it needs saying.
+  const stale = code==='PGRST205' || /schema cache/i.test(msg);
+  d.innerHTML='';
+  const t=document.createElement('div');
+  t.style.cssText='font-family:monospace;font-size:.7rem;color:var(--rust);word-break:break-word;margin-bottom:6px';
+  t.textContent=(code?code+': ':'')+msg;
+  d.appendChild(t);
+  if(stale){
+    const h=document.createElement('div');
+    h.style.cssText='font-size:.76rem;color:var(--ink);line-height:1.55';
+    h.innerHTML='<strong>The table exists \u2014 Supabase just has not refreshed its API cache.</strong> '+
+      'In Supabase go to <strong>Settings \u2192 API \u2192 Reload schema cache</strong>, '+
+      'or run <code style="background:#eee;padding:1px 4px;border-radius:3px">notify pgrst, \'reload schema\';</code> '+
+      'in the SQL Editor. Then tap check again.';
+    d.appendChild(h);
+  }
 }
 
 // ── form ───────────────────────────────────────────────────────────
@@ -2780,12 +2804,15 @@ function closeEditIncomeModal(){
 }
 
 // ── load + realtime ────────────────────────────────────────────────
+let incomeProbeError=null;
 async function loadIncomeFromSupabase(){
   if(!sbClient)return;
   try{
     const probe=await sbClient.from('income').select('id').limit(1);
+    // PGRST116 just means the table is empty, which is fine.
     incomeTableMissing = !!(probe.error && probe.error.code!=='PGRST116');
-  }catch{ incomeTableMissing=true; }
+    incomeProbeError = incomeTableMissing ? probe.error : null;
+  }catch(e){ incomeTableMissing=true; incomeProbeError={message:e.message,code:'network'}; }
   revWarn();
   if(incomeTableMissing){incomeRows=[];renderRevenue();return;}
   try{
@@ -3066,9 +3093,12 @@ document.getElementById('rev-recheck-btn').addEventListener('click',function(){
   setText(b,'Checking\u2026'); b.disabled=true;
   refreshIncomeConnection().then(()=>{
     b.disabled=false; setText(b,"I've run the SQL \u2014 check again");
-    showToast(incomeTableMissing
-      ? '\u26a0 Still not found \u2014 check the SQL ran without error'
-      : '\u2713 Revenue table found');
+    if(!incomeTableMissing){showToast('\u2713 Revenue table found');return;}
+    const code=(incomeProbeError&&incomeProbeError.code)||'';
+    const msg=(incomeProbeError&&incomeProbeError.message)||'';
+    showToast(code==='PGRST205'||/schema cache/i.test(msg)
+      ? '\u26a0 Supabase API cache is stale \u2014 see below'
+      : '\u26a0 '+(code||'Not found')+' \u2014 see details below');
   });
 });
 document.getElementById('rev-save-btn').addEventListener('click',addIncome);
