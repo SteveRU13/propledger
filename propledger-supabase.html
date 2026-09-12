@@ -171,6 +171,8 @@
     font-size:1rem;cursor:pointer;letter-spacing:.02em;transition:all .2s;margin-top:4px}
   .btn-revenue:active{transform:scale(.98)}
   .rev-item{border-left:3px solid var(--sage)}
+  .rev-field-label{font-size:.68rem;font-weight:600;text-transform:uppercase;
+    letter-spacing:.08em;color:var(--mid);margin-bottom:6px}
   .rev-setup-warn{display:none;font-size:.78rem;background:#fff5f5;
     border:1.5px solid var(--rust);border-radius:10px;padding:12px 14px;
     margin-bottom:16px;color:var(--ink);line-height:1.6}
@@ -498,6 +500,7 @@
       font-family:'DM Sans',sans-serif;font-size:.76rem;font-weight:600;padding:8px 14px;
       border-radius:6px;cursor:pointer;min-height:36px">I've run the SQL — check again</button>
   </div>
+  <div class="rev-field-label">Recording income for</div>
   <div class="building-toggle" id="rev-bld-toggle"></div>
   <div class="add-form rev-form">
     <div class="form-row">
@@ -528,6 +531,8 @@
     <button class="btn-secondary" id="rev-clear-btn" type="button">Clear Form</button>
   </div>
   <div class="section-title">Recorded Income</div>
+  <div class="rev-field-label">Show</div>
+  <div class="building-toggle" id="rev-list-bld-toggle"></div>
   <div class="filter-bar" id="rev-filter-bar"></div>
   <div id="revenue-list" class="expense-list"></div>
 </div>
@@ -2007,7 +2012,12 @@ create table if not exists income (
 );
 alter table income enable row level security;
 drop policy if exists "allow all" on income;
-create policy "allow all" on income for all using (true) with check (true);`;
+create policy "allow all" on income for all using (true) with check (true);
+-- Grants are separate from RLS. RLS decides which rows you may touch;
+-- these decide whether the API role may touch the table at all. Without
+-- them every request fails with 42501 permission denied.
+grant usage on schema public to anon, authenticated;
+grant all on table income to anon, authenticated;`;
 
 const SETUP_SQL = `-- Run this once in Supabase SQL Editor
 create table if not exists expenses (
@@ -2038,7 +2048,12 @@ create table if not exists income (
   created_at  timestamptz default now()
 );
 alter table income enable row level security;
-create policy "allow all" on income for all using (true) with check (true);`;
+create policy "allow all" on income for all using (true) with check (true);
+
+-- API role needs table privileges as well as RLS policies
+grant usage on schema public to anon, authenticated;
+grant all on table expenses to anon, authenticated;
+grant all on table income   to anon, authenticated;`;
 
 // Load saved config from localStorage
 function loadCfg(){
@@ -2606,6 +2621,7 @@ function revWarn(){
   // PGRST205 = the table exists but Supabase's API has not picked it up yet.
   // That is a cache refresh, not a missing table, and it needs saying.
   const stale = code==='PGRST205' || /schema cache/i.test(msg);
+  const noGrant = code==='42501' || /permission denied/i.test(msg);
   d.innerHTML='';
   const t=document.createElement('div');
   t.style.cssText='font-family:monospace;font-size:.7rem;color:var(--rust);word-break:break-word;margin-bottom:6px';
@@ -2619,6 +2635,29 @@ function revWarn(){
       'or run <code style="background:#eee;padding:1px 4px;border-radius:3px">notify pgrst, \'reload schema\';</code> '+
       'in the SQL Editor. Then tap check again.';
     d.appendChild(h);
+  }else if(noGrant){
+    // The table is there but the API role has no privileges on it. Row-level
+    // security and GRANT are separate layers and both have to be set.
+    const h=document.createElement('div');
+    h.style.cssText='font-size:.76rem;color:var(--ink);line-height:1.55';
+    h.innerHTML='<strong>The table exists but the API has no access to it.</strong> '+
+      'Run this in the SQL Editor, then tap check again:';
+    const pre=document.createElement('div');
+    pre.style.cssText='font-family:monospace;font-size:.7rem;background:#0d0d14;color:#a8d8a8;'+
+      'padding:10px;border-radius:6px;margin-top:8px;white-space:pre-wrap;word-break:break-word';
+    pre.textContent=GRANT_SQL;
+    const cp=document.createElement('button');
+    cp.type='button';
+    cp.style.cssText='margin-top:8px;background:var(--sage);border:none;color:#fff;'+
+      'font-family:\'DM Sans\',sans-serif;font-size:.74rem;font-weight:600;padding:7px 14px;'+
+      'border-radius:6px;cursor:pointer;min-height:36px';
+    setText(cp,'Copy grant SQL');
+    cp.addEventListener('click',()=>{
+      navigator.clipboard.writeText(GRANT_SQL).then(()=>{
+        setText(cp,'Copied!');setTimeout(()=>setText(cp,'Copy grant SQL'),1800);
+      }).catch(()=>{});
+    });
+    d.append(h,pre,cp);
   }
 }
 
@@ -2804,6 +2843,8 @@ function closeEditIncomeModal(){
 }
 
 // ── load + realtime ────────────────────────────────────────────────
+const GRANT_SQL='grant usage on schema public to anon, authenticated;\n'+
+                'grant all on table income to anon, authenticated;';
 let incomeProbeError=null;
 async function loadIncomeFromSupabase(){
   if(!sbClient)return;
@@ -3084,9 +3125,25 @@ function renderNet(){
 /* ═══ WIRING — all additive listeners ═══════════════════════════════ */
 fillSrcSelect(document.getElementById('rev-src'));
 {const d=document.getElementById('rev-date'); if(d)d.value=today();}
-makeBldToggles('rev-bld-toggle',curRevBld,(id,cid)=>{
-  curRevBld=id; fltRevBld=id; updBldActive(cid,id); renderRevenue();
-},false);
+// Two separate controls: the top one chooses which building a NEW entry
+// belongs to (so it cannot offer "All"), the lower one filters the list
+// (so it can, and defaults to showing everything).
+fltRevBld=0;
+function paintRevToggles(){
+  // A building can be removed in Settings while these still point at it
+  if(!validBuildingId(curRevBld)){
+    const first=getBuildings()[0];
+    curRevBld=first?first.id:1;
+  }
+  if(fltRevBld!==0&&!validBuildingId(fltRevBld))fltRevBld=0;
+  makeBldToggles('rev-bld-toggle',curRevBld,(id,cid)=>{
+    curRevBld=id; updBldActive(cid,id);
+  },false);
+  makeBldToggles('rev-list-bld-toggle',fltRevBld,(id,cid)=>{
+    fltRevBld=id; updBldActive(cid,id); renderRevenue();
+  },true);
+}
+paintRevToggles();
 
 document.getElementById('rev-recheck-btn').addEventListener('click',function(){
   const b=this;
@@ -3161,9 +3218,7 @@ document.getElementById('dup-confirm-modal').addEventListener('click',function(e
 // these just add the render step afterwards.
 document.getElementById('tab-revenue').addEventListener('click',()=>{
   showTab('revenue');
-  makeBldToggles('rev-bld-toggle',curRevBld,(id,cid)=>{
-    curRevBld=id; fltRevBld=id; updBldActive(cid,id); renderRevenue();
-  },false);
+  paintRevToggles();
   renderRevenue();
   // Self-healing: if the table looked missing, check again on every visit.
   // Running the SQL then opening this tab is enough to clear the warning.
