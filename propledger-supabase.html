@@ -491,6 +491,10 @@
     revenue SQL</em>), then reconnect. Use that shorter block, not the full script —
     re-running the full one on an existing project can deadlock. Until this is done,
     income cannot be saved.
+    <button type="button" id="rev-recheck-btn"
+      style="display:block;margin-top:10px;background:var(--rust);border:none;color:#fff;
+      font-family:'DM Sans',sans-serif;font-size:.76rem;font-weight:600;padding:8px 14px;
+      border-radius:6px;cursor:pointer;min-height:36px">I've run the SQL — check again</button>
   </div>
   <div class="building-toggle" id="rev-bld-toggle"></div>
   <div class="add-form rev-form">
@@ -1705,9 +1709,7 @@ let exportedThisSession=false;
 
 // Deliberate route back to the config screen (does not delete any data)
 document.getElementById('reconnect-btn').addEventListener('click',function(){
-  showConfigScreen();
-  const codeField=document.getElementById('cfg-code')||document.getElementById('cfg-access-code');
-  if(codeField)codeField.value='';
+  showConfigScreen();   // fills url + key, clears the access code
 });
 
 document.getElementById('danger-toggle').addEventListener('click',function(){
@@ -1962,13 +1964,21 @@ function showConfigScreen(){
   el.classList.remove('hide');
   el.style.display='flex';
   el.scrollTop=0;
+  const cfg=loadCfg();
+  // Keep the URL and key filled in. They are not secrets you retype each
+  // time, and reconnecting is usually about re-probing the database rather
+  // than changing projects. The access code is always cleared, since it is
+  // the thing actually being checked.
+  const u=document.getElementById('cfg-url');
+  const k=document.getElementById('cfg-key');
+  if(u&&cfg&&cfg.url)u.value=cfg.url;
+  if(k&&cfg&&cfg.key)k.value=cfg.key;
+  const code=document.getElementById('cfg-code');
+  if(code)code.value='';
   // Back only makes sense if there is a working connection to return to.
   // On a first-ever launch there is nothing behind this screen.
   const back=document.getElementById('config-back-btn');
-  if(back){
-    const cfg=loadCfg();
-    back.style.display=(sbReady&&cfg&&cfg.url&&cfg.key)?'block':'none';
-  }
+  if(back) back.style.display=(sbReady&&cfg&&cfg.url&&cfg.key)?'block':'none';
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -3051,6 +3061,16 @@ makeBldToggles('rev-bld-toggle',curRevBld,(id,cid)=>{
   curRevBld=id; fltRevBld=id; updBldActive(cid,id); renderRevenue();
 },false);
 
+document.getElementById('rev-recheck-btn').addEventListener('click',function(){
+  const b=this;
+  setText(b,'Checking\u2026'); b.disabled=true;
+  refreshIncomeConnection().then(()=>{
+    b.disabled=false; setText(b,"I've run the SQL \u2014 check again");
+    showToast(incomeTableMissing
+      ? '\u26a0 Still not found \u2014 check the SQL ran without error'
+      : '\u2713 Revenue table found');
+  });
+});
 document.getElementById('rev-save-btn').addEventListener('click',addIncome);
 document.getElementById('rev-clear-btn').addEventListener('click',resetRevForm);
 document.getElementById('edit-inc-cancel-btn').addEventListener('click',closeEditIncomeModal);
@@ -3115,6 +3135,9 @@ document.getElementById('tab-revenue').addEventListener('click',()=>{
     curRevBld=id; fltRevBld=id; updBldActive(cid,id); renderRevenue();
   },false);
   renderRevenue();
+  // Self-healing: if the table looked missing, check again on every visit.
+  // Running the SQL then opening this tab is enough to clear the warning.
+  if(incomeTableMissing&&sbClient) refreshIncomeConnection();
 });
 document.getElementById('tab-net').addEventListener('click',()=>{
   showTab('net'); renderNet();
@@ -3129,6 +3152,25 @@ document.getElementById('tab-net').addEventListener('click',()=>{
   }
   if(tries>0)setTimeout(()=>waitForClient(tries-1),400);
 })(40);
+
+// Re-probe after a manual reconnect. The existing connect handler reloads
+// expenses only, so without this the app would never notice that the income
+// table had since been created.
+let incSubscribed=false;
+function refreshIncomeConnection(){
+  if(!sbClient)return Promise.resolve();
+  return loadIncomeFromSupabase().then(()=>{
+    if(!incomeTableMissing&&!incSubscribed){incSubscribed=true;subscribeIncomeRealtime();}
+  });
+}
+document.getElementById('cfg-connect-btn').addEventListener('click',()=>{
+  // the existing handler is async; wait for it to establish the client
+  let t=0;
+  (function retry(){
+    if(sbReady&&sbClient){refreshIncomeConnection();return;}
+    if(t++<25)setTimeout(retry,400);
+  })();
+});
 </script>
 
 </body>
