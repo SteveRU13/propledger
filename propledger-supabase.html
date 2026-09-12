@@ -298,12 +298,25 @@
       3. Go to SQL Editor → run the setup SQL below (it creates <strong style="color:#fff">both</strong> the expenses and income tables)<br>
       4. Go to Storage → create a bucket called <strong style="color:#fff">receipts</strong> (public)<br>
       5. Paste URL, key and choose an access code above<br><br>
-      <strong style="color:var(--gold)">SQL to run in Supabase SQL Editor:</strong><br>
-      <div id="setup-sql-box" style="background:#0d0d14;border-radius:6px;padding:10px;margin-top:6px;font-family:monospace;font-size:.68rem;color:#a8d8a8;white-space:pre-wrap;word-break:break-all"></div>
+      <div style="background:#14261c;border:1px solid #2d6a4f;border-radius:8px;padding:12px;margin-top:4px">
+        <strong style="color:#7fb89a">Already using PropLedger? Run only this.</strong><br>
+        <span style="color:#8899aa">It adds the revenue table and nothing else. Running the
+        full script below on an existing project can deadlock, because it re-locks the
+        expenses table while the app is reading from it.</span>
+        <div id="income-sql-box" style="background:#0d0d14;border-radius:6px;padding:10px;margin-top:8px;font-family:monospace;font-size:.68rem;color:#a8d8a8;white-space:pre-wrap;word-break:break-word;max-height:220px;overflow:auto"></div>
+        <button type="button" id="copy-income-sql-btn"
+          style="margin-top:8px;background:var(--sage);border:none;color:#fff;
+          font-size:.74rem;font-weight:600;border-radius:6px;padding:7px 14px;cursor:pointer;font-family:'DM Sans',sans-serif">
+          Copy revenue SQL
+        </button>
+      </div>
+
+      <strong style="color:var(--gold);display:block;margin-top:16px">Brand new project? Run the full script:</strong>
+      <div id="setup-sql-box" style="background:#0d0d14;border-radius:6px;padding:10px;margin-top:6px;font-family:monospace;font-size:.68rem;color:#a8d8a8;white-space:pre-wrap;word-break:break-word"></div>
       <button type="button" id="copy-sql-btn"
         style="margin-top:8px;background:transparent;border:1px solid #2a2a35;color:#8899aa;
         font-size:.72rem;border-radius:6px;padding:5px 12px;cursor:pointer;font-family:'DM Sans',sans-serif">
-        Copy SQL
+        Copy full SQL
       </button>
     </div>
   </div>
@@ -473,9 +486,11 @@
   </div>
   <div class="rev-setup-warn" id="rev-setup-warn">
     <strong style="color:var(--rust)">One-time setup needed.</strong>
-    Open your Supabase project → SQL Editor and run the <strong>income</strong> table
-    statement from the setup guide (Settings → Change connection settings → Show Supabase
-    setup guide), then reconnect. Until then income cannot be saved.
+    Open Supabase → SQL Editor and run the <strong>revenue SQL</strong> from the setup
+    guide (Settings → Change connection settings → Show Supabase setup guide → <em>Copy
+    revenue SQL</em>), then reconnect. Use that shorter block, not the full script —
+    re-running the full one on an existing project can deadlock. Until this is done,
+    income cannot be saved.
   </div>
   <div class="building-toggle" id="rev-bld-toggle"></div>
   <div class="add-form rev-form">
@@ -1964,6 +1979,24 @@ const SESH_KEY  = 'propledger_sb_session';
 let   sbClient  = null;   // Supabase client instance
 let   sbReady   = false;
 
+// Only the income table. Existing users already have expenses with RLS
+// enabled — re-running that part takes an AccessExclusiveLock on a table
+// the app is actively reading, which deadlocks against its own connection.
+const INCOME_SQL = `-- Adds the revenue table only. Safe to run while the app is open.
+create table if not exists income (
+  id          bigint primary key,
+  building    int not null,
+  source      text not null,
+  amount      numeric(10,2) not null,
+  date        date not null,
+  description text,
+  notes       text,
+  created_at  timestamptz default now()
+);
+alter table income enable row level security;
+drop policy if exists "allow all" on income;
+create policy "allow all" on income for all using (true) with check (true);`;
+
 const SETUP_SQL = `-- Run this once in Supabase SQL Editor
 create table if not exists expenses (
   id          bigint primary key,
@@ -2038,10 +2071,17 @@ document.getElementById('guide-toggle').addEventListener('click',function(){
   this.textContent=(open?'▶':'▼')+' '+(open?'Show':'Hide')+' Supabase setup guide';
 });
 document.getElementById('setup-sql-box').textContent=SETUP_SQL;
+document.getElementById('income-sql-box').textContent=INCOME_SQL;
 document.getElementById('copy-sql-btn').addEventListener('click',()=>{
   navigator.clipboard.writeText(SETUP_SQL).then(()=>{
     const btn=document.getElementById('copy-sql-btn');
-    btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy SQL',1800);
+    btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy full SQL',1800);
+  }).catch(()=>{});
+});
+document.getElementById('copy-income-sql-btn').addEventListener('click',()=>{
+  navigator.clipboard.writeText(INCOME_SQL).then(()=>{
+    const btn=document.getElementById('copy-income-sql-btn');
+    btn.textContent='Copied!';setTimeout(()=>btn.textContent='Copy revenue SQL',1800);
   }).catch(()=>{});
 });
 
