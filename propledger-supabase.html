@@ -213,9 +213,19 @@
 
 
   /* Supabase config / access-code screen */
+  /* flex-start + overflow: centring alone clips the top of tall content
+     and leaves no way to scroll to the rest of the SQL */
   .config-screen{position:fixed;inset:0;z-index:8500;background:var(--ink);
-    display:flex;flex-direction:column;align-items:center;justify-content:center;
-    padding:32px 24px}
+    display:flex;flex-direction:column;align-items:center;justify-content:flex-start;
+    padding:26px 24px 80px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+  .config-back{position:sticky;top:0;align-self:flex-start;z-index:2;
+    background:#1a1a22;border:1px solid #2a2a35;color:#8899aa;
+    font-family:'DM Sans',sans-serif;font-size:.8rem;font-weight:500;
+    padding:9px 16px;border-radius:8px;cursor:pointer;margin-bottom:14px;
+    display:none;min-height:40px}
+  .config-back:active{background:#2a2a35;color:#fff}
+  /* the SQL box scrolls on its own too, so a long script never traps the page */
+  #setup-sql-box{max-height:260px;overflow:auto;-webkit-overflow-scrolling:touch}
   .config-screen.hide{display:none}
   .config-logo{font-family:'DM Serif Display',serif;font-size:2.2rem;color:var(--gold);
     letter-spacing:-.02em;margin-bottom:4px}
@@ -254,6 +264,7 @@
 
 <!-- ══ CONFIG / ACCESS CODE SCREEN ══ -->
 <div class="config-screen" id="config-screen">
+  <button class="config-back" id="config-back-btn" type="button">← Back to app</button>
   <div class="config-logo">PropLedger</div>
   <div class="config-sub">Synced · Supabase</div>
   <div class="config-card">
@@ -284,7 +295,7 @@
       <strong style="color:var(--gold)">One-time setup (~5 min):</strong><br>
       1. Go to <strong style="color:#fff">supabase.com</strong> → New project (free)<br>
       2. Project Settings → API → copy <em>Project URL</em> and <em>anon public</em> key<br>
-      3. Go to SQL Editor → run the setup SQL below<br>
+      3. Go to SQL Editor → run the setup SQL below (it creates <strong style="color:#fff">both</strong> the expenses and income tables)<br>
       4. Go to Storage → create a bucket called <strong style="color:#fff">receipts</strong> (public)<br>
       5. Paste URL, key and choose an access code above<br><br>
       <strong style="color:var(--gold)">SQL to run in Supabase SQL Editor:</strong><br>
@@ -306,7 +317,7 @@
   <!-- SETUP: choose PIN (shown on first launch) -->
   <div id="lock-setup" style="display:none;width:100%;max-width:320px;align-items:center;flex-direction:column">
     <div class="lock-logo">PropLedger</div>
-    <div class="lock-sub">Rental Expense Tracker</div>
+    <div class="lock-sub">Rental Expense and Inflow Tracker</div>
     <div class="setup-step" id="setup-step-label">Step 1 of 2 — Choose a PIN</div>
     <div class="lock-title" id="setup-title">Enter a 4-digit PIN</div>
     <div class="pin-dots" id="setup-dots">
@@ -320,7 +331,7 @@
   <!-- UNLOCK: enter PIN (shown on subsequent launches) -->
   <div id="lock-unlock" style="display:none;width:100%;max-width:320px;align-items:center;flex-direction:column">
     <div class="lock-logo">PropLedger</div>
-    <div class="lock-sub">Rental Expense Tracker</div>
+    <div class="lock-sub">Rental Expense and Inflow Tracker</div>
     <div class="lock-title">Enter your PIN</div>
     <div class="pin-dots" id="unlock-dots">
       <div class="pin-dot" id="ud0"></div><div class="pin-dot" id="ud1"></div>
@@ -336,7 +347,7 @@
 
 <div class="app-header">
   <h1>PropLedger</h1>
-  <p>Rental Expense Tracker · Synced <span class="sync-badge" id="sync-badge"><span class="sync-dot" id="sync-dot"></span><span id="sync-label">offline</span></span></p>
+  <p>Rental Expense and Inflow Tracker <span class="sync-badge" id="sync-badge"><span class="sync-dot" id="sync-dot"></span><span id="sync-label">offline</span></span></p>
 </div>
 <div class="tabs">
   <button class="tab-btn active" id="tab-add">＋ Add</button>
@@ -1935,6 +1946,14 @@ function showConfigScreen(){
   if(!el)return;
   el.classList.remove('hide');
   el.style.display='flex';
+  el.scrollTop=0;
+  // Back only makes sense if there is a working connection to return to.
+  // On a first-ever launch there is nothing behind this screen.
+  const back=document.getElementById('config-back-btn');
+  if(back){
+    const cfg=loadCfg();
+    back.style.display=(sbReady&&cfg&&cfg.url&&cfg.key)?'block':'none';
+  }
 }
 
 // ════════════════════════════════════════════════════════════════════
@@ -2009,6 +2028,9 @@ function setSyncStatus(state){ // 'online'|'syncing'|'error'|'offline'
 }
 
 // ── Config screen ──────────────────────────────────────────────────
+document.getElementById('config-back-btn').addEventListener('click',()=>{
+  hideConfigScreen();
+});
 document.getElementById('guide-toggle').addEventListener('click',function(){
   const body=document.getElementById('guide-body');
   const open=body.style.display==='block';
@@ -2859,8 +2881,14 @@ function renderNet(){
   }
   const lastM=lastVisibleMonth(netYear);
   const finals=blds.map(b=>cum[b.id][lastM]);
+  // The portfolio line: every property's running net added together. It is
+  // always the lowest or highest line, so it sets the scale.
+  const combined=Array(12).fill(0);
+  for(let m=0;m<12;m++) blds.forEach(b=>{combined[m]+=cum[b.id][m];});
+  const showCombined = blds.length>1;
   const allVals=[];
   blds.forEach(b=>{for(let m=0;m<=lastM;m++)allVals.push(cum[b.id][m]);});
+  if(showCombined) for(let m=0;m<=lastM;m++) allVals.push(combined[m]);
   const maxV=Math.max(...allVals,0), minV=Math.min(...allVals,0);
   const span=Math.max(maxV-minV,1);
 
@@ -2921,6 +2949,37 @@ function renderNet(){
     cap.textContent=(fv<0?'-':'+')+barLabel(Math.abs(fv));
     svg.appendChild(cap);
   });
+  // Portfolio line drawn last so it reads on top of the property lines
+  if(showCombined){
+    const pts=[];
+    for(let m=0;m<=lastM;m++)pts.push([L+m*colW+colW/2, yOf(combined[m])]);
+    if(pts.length>1){
+      const path=document.createElementNS(NS,'path');
+      path.setAttribute('d','M'+pts.map(p=>p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' L'));
+      path.setAttribute('fill','none');
+      path.setAttribute('stroke','#0a0a0f');
+      path.setAttribute('stroke-width',2.8);
+      path.setAttribute('stroke-linejoin','round');
+      path.setAttribute('stroke-linecap','round');
+      path.setAttribute('stroke-dasharray','5 2.5');
+      svg.appendChild(path);
+    }
+    const [lx,ly]=pts[pts.length-1];
+    const dot=document.createElementNS(NS,'circle');
+    dot.setAttribute('cx',lx);dot.setAttribute('cy',ly);dot.setAttribute('r',3.2);
+    dot.setAttribute('fill','#0a0a0f');svg.appendChild(dot);
+    const cap=document.createElementNS(NS,'text');
+    cap.setAttribute('x',Math.min(lx,R-16));
+    // sits opposite the property labels so the two never collide
+    cap.setAttribute('y',ly<zeroY?ly+10:ly-6.5);
+    cap.setAttribute('text-anchor','middle');cap.setAttribute('font-size','6.8');
+    cap.setAttribute('font-family','DM Sans, sans-serif');cap.setAttribute('font-weight','700');
+    cap.setAttribute('fill','#0a0a0f');
+    const cv=combined[lastM];
+    cap.textContent=(cv<0?'-':'+')+barLabel(Math.abs(cv));
+    svg.appendChild(cap);
+  }
+
   for(let m=0;m<12;m++){
     const lbl=document.createElementNS(NS,'text');
     lbl.setAttribute('x',L+m*colW+colW/2);lbl.setAttribute('y',BOT+14);
@@ -2931,13 +2990,18 @@ function renderNet(){
     svg.appendChild(lbl);
   }
   const totalNet=finals.reduce((s,v)=>s+v,0);
+  const legend=[];
+  if(showCombined) legend.push({label:'All Properties',color:'#0a0a0f',
+    amount:(combined[lastM]<0?'-':'+')+fmt(Math.abs(combined[lastM]))});
+  [...blds].sort((a,b)=>cum[b.id][lastM]-cum[a.id][lastM]).forEach(b=>legend.push({
+    label:b.label,color:b.color,
+    amount:(cum[b.id][lastM]<0?'-':'+')+fmt(Math.abs(cum[b.id][lastM]))}));
   host.appendChild(chartCard('Net cumulative \u00b7 '+netYear,
     (totalNet<0?'-':'+')+fmt(Math.abs(totalNet)),
-    'Income minus expenses, running from January. Above the zero line means ahead for the year.',
-    svg,
-    [...blds].sort((a,b)=>cum[b.id][lastM]-cum[a.id][lastM]).map(b=>({
-      label:b.label,color:b.color,
-      amount:(cum[b.id][lastM]<0?'-':'+')+fmt(Math.abs(cum[b.id][lastM]))}))));
+    showCombined
+      ? 'Income minus expenses, running from January. The dashed black line is the whole portfolio combined.'
+      : 'Income minus expenses, running from January. Above the zero line means ahead for the year.',
+    svg, legend));
 }
 
 /* ═══ WIRING — all additive listeners ═══════════════════════════════ */
