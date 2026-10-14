@@ -2760,7 +2760,9 @@ if(document.readyState==='loading'){
 
   // Register service worker inline via a blob URL for offline support
   const swCode=`
-const CACHE='propledger-v1';
+// The cache name carries a build stamp, so a new upload retires the old
+// cache instead of serving it forever.
+const CACHE='propledger-3daa5fed6d';
 const URLS=[
   self.location.href,
   'https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap',
@@ -2775,6 +2777,24 @@ self.addEventListener('activate',e=>{
   self.clients.claim();
 });
 self.addEventListener('fetch',e=>{
+  const isPage = e.request.mode==='navigate' ||
+    (e.request.destination==='document') ||
+    (e.request.method==='GET' && (e.request.headers.get('accept')||'').includes('text/html'));
+  if(isPage){
+    // Network first for the app itself. Cache-first here meant an installed
+    // app served the first HTML it ever saw and never picked up an update.
+    e.respondWith(
+      fetch(e.request).then(res=>{
+        if(res&&res.status===200){
+          const clone=res.clone();
+          caches.open(CACHE).then(c=>c.put(e.request,clone));
+        }
+        return res;
+      }).catch(()=>caches.match(e.request).then(r=>r||caches.match(self.location.href)))
+    );
+    return;
+  }
+  // Fonts and other static assets can stay cache-first.
   e.respondWith(caches.match(e.request).then(r=>r||fetch(e.request).then(res=>{
     if(res&&res.status===200&&res.type==='basic'){
       const clone=res.clone();
@@ -2788,7 +2808,15 @@ self.addEventListener('fetch',e=>{
     const swBlob=new Blob([swCode],{type:'text/javascript'});
     const swUrl=URL.createObjectURL(swBlob);
     navigator.serviceWorker.register(swUrl,{scope:'./'})
-      .then(()=>console.log('PropLedger SW registered'))
+      .then(reg=>{
+        // Ask for a fresh copy on every launch, and reload once the new
+        // worker takes over so the update is visible immediately.
+        try{ reg.update(); }catch{}
+        let reloaded=false;
+        navigator.serviceWorker.addEventListener('controllerchange',()=>{
+          if(reloaded)return; reloaded=true; location.reload();
+        });
+      })
       .catch(e=>console.warn('SW registration skipped:',e));
   }
 })();
