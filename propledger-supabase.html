@@ -2762,7 +2762,7 @@ if(document.readyState==='loading'){
   const swCode=`
 // The cache name carries a build stamp, so a new upload retires the old
 // cache instead of serving it forever.
-const CACHE='propledger-3daa5fed6d';
+const CACHE='propledger-821e4d23d9';
 const URLS=[
   self.location.href,
   'https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap',
@@ -4381,8 +4381,12 @@ function stepPool(opening, additions, dispCredit, adjRaw, rate, claim, capFactor
    CCA may not create or increase a rental loss, so the total claim is capped. */
 function ccaCompute(assets, year, netBeforeByYear){
   const live=assets.filter(a=>a&&a.cls&&yearOf(a.acquired)<=year);
+  // Report the year's position even with nothing to depreciate yet, so the
+  // screen shows the real figure rather than a misleading zero.
+  const nb0=r2((netBeforeByYear&&netBeforeByYear[year]!=null)?netBeforeByYear[year]:0);
   if(!live.length)return {pools:[],totalCCA:0,totalRecapture:0,totalTerminal:0,
-                          capApplied:false,maxClaim:0,uncapped:0};
+                          capApplied:false,maxClaim:Math.max(0,nb0),uncapped:0,
+                          netBefore:nb0};
 
   const firstYear=Math.min(...live.map(a=>yearOf(a.acquired)));
   const pools={};
@@ -4607,7 +4611,10 @@ function renderCcaSummary(res){
   setText(v,fmt(res.totalCCA));
   hdr.append(t,v);card.appendChild(hdr);
 
-  ccaLine(card,'Net rental income before CCA',fmt(res.netBefore||0));
+  const nbv=res.netBefore||0;
+  ccaLine(card,'Net rental income before CCA',
+    (nbv<0?'-':'')+fmt(Math.abs(nbv)),
+    {color:nbv<0?'var(--rust)':null});
   if(res.totalRecapture>0)
     ccaLine(card,'Recapture — T776 line 9947',fmt(res.totalRecapture),{color:'var(--rust)'});
   if(res.totalTerminal>0)
@@ -4618,7 +4625,19 @@ function renderCcaSummary(res){
 
   const note=document.createElement('div');
   note.className='cca-note';
-  if(res.capApplied){
+  // A rental loss is checked first: it is the clearer explanation, and it
+  // also trips the cap, so the generic message would otherwise win.
+  if((res.netBefore||0)<=0&&res.uncapped>0){
+    note.innerHTML='<strong>No CCA can be claimed this year.</strong> The properties are at '+
+      'a rental loss before CCA, and CCA cannot create or increase a rental loss. '+
+      fmt(res.uncapped)+' was available. Pools carry forward untouched and the '+
+      'allowance stays there for a profitable year.';
+    note.style.color='var(--rust)';
+  }else if((res.netBefore||0)<0){
+    note.innerHTML='<strong>No CCA can be claimed this year.</strong> The properties are at '+
+      'a rental loss before CCA, and CCA cannot create or increase a rental loss.';
+    note.style.color='var(--rust)';
+  }else if(res.capApplied){
     note.innerHTML='<strong>The claim was capped.</strong> CCA cannot create or increase a '+
       'rental loss, so only '+fmt(res.totalCCA)+' of the '+fmt(res.uncapped)+
       ' available could be claimed. The remainder stays in the pools for future years.';
