@@ -167,6 +167,24 @@
     box-shadow:0 2px 16px rgba(107,45,92,.22)}
   .cca-banner{background:linear-gradient(135deg,#4a3a6b,#2b2040);border-color:#221a33;
     box-shadow:0 2px 16px rgba(74,58,107,.22)}
+  .filing-banner{background:linear-gradient(135deg,#8a5a2b,#5a3718);border-color:#452a12;
+    box-shadow:0 2px 16px rgba(138,90,43,.22)}
+  .tab-btn#tab-filing{border-color:#8a5a2b;color:#dcab6b}
+  .tab-btn#tab-filing.active{background:#8a5a2b;border-color:#8a5a2b;color:#fff}
+  .fl-row{display:grid;grid-template-columns:52px 1fr auto;gap:8px;align-items:baseline;
+    padding:9px 14px;border-top:1px solid var(--border);font-size:.8rem}
+  .fl-row:nth-child(even){background:var(--paper)}
+  .fl-row .ln{font-family:monospace;font-size:.74rem;color:var(--gold);font-weight:600}
+  .fl-row .amt{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+  .fl-row.sub{background:#faf6ef;font-weight:600}
+  .fl-row.sub .ln{color:var(--ink)}
+  .fl-row.total{background:var(--ink);color:#fff}
+  .fl-row.total .ln{color:var(--gold)}
+  .fl-row.total .amt{font-family:'DM Serif Display',serif;font-size:1.05rem}
+  .fl-row.zero{opacity:.45}
+  .fl-head{padding:10px 14px;background:#f1e9dc;font-size:.7rem;font-weight:600;
+    letter-spacing:.07em;text-transform:uppercase;color:#6b4a22}
+  .fl-detail{font-size:.68rem;color:var(--mid);display:block;margin-top:2px}
   .tab-btn#tab-cca{border-color:#4a3a6b;color:#b09ad6}
   .tab-btn#tab-cca.active{background:#4a3a6b;border-color:#4a3a6b;color:#fff}
   .cca-row{display:grid;grid-template-columns:1.6fr 1fr;gap:4px;padding:8px 14px;
@@ -407,6 +425,7 @@
   <button class="tab-btn rev-tab" id="tab-net">⇄ Net</button>
   <button class="tab-btn rev-tab" id="tab-mortgage">⌂ Mortgage</button>
   <button class="tab-btn rev-tab" id="tab-cca">⌗ CCA</button>
+  <button class="tab-btn rev-tab" id="tab-filing">⊞ Filing</button>
   <button class="tab-btn" id="tab-settings">⚙</button>
 </div>
 
@@ -703,6 +722,7 @@
   </div>
   <div class="year-bar" id="cca-year-bar"></div>
   <div id="cca-summary"></div>
+  <div id="cca-import"></div>
   <div class="section-title">Capital Assets</div>
   <div id="cca-asset-list"></div>
   <button class="btn-revenue" id="cca-add-btn" type="button" style="margin-bottom:18px">＋ Add a capital asset</button>
@@ -712,6 +732,20 @@
     <h3 style="color:#c3a8e0">CCA Export</h3>
     <p id="cca-export-blurb">Area A columns in the order the form uses, for your accountant.</p>
     <div class="export-btns" id="cca-export-btns"></div>
+  </div>
+</div>
+
+<div id="screen-filing" class="screen scrollable">
+  <div class="rev-banner filing-banner">
+    <div class="rev-banner-t">Tax Filing Sheet</div>
+    <div class="rev-banner-s">Every T776 line with your figure beside it.</div>
+  </div>
+  <div class="year-bar" id="filing-year-bar"></div>
+  <div id="filing-sheet"></div>
+  <div class="export-card" style="border-color:#b8863b">
+    <h3 style="color:#e0b968">Filing Export</h3>
+    <p id="filing-export-blurb">Line-by-line, in form order, for your accountant.</p>
+    <div class="export-btns" id="filing-export-btns"></div>
   </div>
 </div>
 
@@ -1467,7 +1501,13 @@ function renderSummary(){
   if(sumYear===null||!yearsWithData().includes(sumYear))sumYear=yearsWithData()[0];
   renderYearBar();
   const inYear=expensesIn(sumYear);
-  const total=inYear.reduce((s,e)=>s+e.amount,0);
+  // Anything imported to the CCA schedule is written off over time instead,
+  // so it must not also appear as a deductible expense here.
+  const depId=(typeof window.ccaDepreciatedIds==='function')?window.ccaDepreciatedIds():new Set();
+  const deduct=inYear.filter(e=>!depId.has(e.id));
+  const capital=inYear.filter(e=>depId.has(e.id));
+  const capitalTotal=capital.reduce((s,e)=>s+e.amount,0);
+  const total=deduct.reduce((s,e)=>s+e.amount,0);
   const withRec=inYear.filter(e=>e.receipt).length;
   const grid=document.getElementById('summary-grid');
   grid.innerHTML='';
@@ -1478,7 +1518,9 @@ function renderSummary(){
     const s=document.createElement('div');s.className='sum-sub';setText(s,sub);
     c.append(l,v,s);return c;
   };
-  grid.appendChild(mkCard(true,sumYear+' Total',fmtShort(total),inYear.length+' expenses'));
+  grid.appendChild(mkCard(true,sumYear+' Deductible',fmtShort(total),deduct.length+' expenses'));
+  if(capitalTotal>0)
+    grid.appendChild(mkCard(false,'Capital',fmtShort(capitalTotal),'on the CCA tab'));
   grid.appendChild(mkCard(false,'With Receipts',withRec,'documented'));
   BUILDINGS.forEach(b=>{
     const bExp=inYear.filter(e=>e.building===b.id);
@@ -1786,11 +1828,21 @@ function exportCSV(bld){
   const scoped=expensesIn(sumYear);
   const data=bld?scoped.filter(e=>e.building===bld):scoped;
   if(!data.length){showToast('Nothing to export for '+sumYear);return;}
-  const rows=[['Date','Building','Category','Group','Amount','Description','Notes','Has Receipt']];
+  const depIds=(typeof window.ccaDepreciatedIds==='function')?window.ccaDepreciatedIds():new Set();
+  const rows=[['Date','Building','Category','Group','Amount','Description','Notes','Has Receipt','Deductible this year']];
   data.forEach(e=>{
     const bInfo=BUILDINGS.find(b=>b.id===e.building);
-    rows.push([e.date,bInfo?bInfo.label:'Building '+e.building,e.category,e.group,e.amount.toFixed(2),e.description||'',e.notes||'',e.receipt?'Yes':'No']);
+    rows.push([e.date,bInfo?bInfo.label:'Building '+e.building,e.category,e.group,e.amount.toFixed(2),
+      e.description||'',e.notes||'',e.receipt?'Yes':'No',
+      depIds.has(e.id)?'No — capital, see CCA schedule':'Yes']);
   });
+  // Totals so the accountant does not have to add the column up
+  const dedTotal=data.filter(e=>!depIds.has(e.id)).reduce((s,e)=>s+e.amount,0);
+  const capTotal=data.filter(e=>depIds.has(e.id)).reduce((s,e)=>s+e.amount,0);
+  rows.push([]);
+  rows.push(['','','','TOTAL DEDUCTIBLE',dedTotal.toFixed(2),'','','','']);
+  if(capTotal>0)
+    rows.push(['','','','CAPITAL — depreciated via CCA',capTotal.toFixed(2),'','','','']);
   const csv=rows.map(r=>r.map(csvCell).join(',')).join('\r\n');
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
   const url=URL.createObjectURL(blob);
@@ -2762,7 +2814,7 @@ if(document.readyState==='loading'){
   const swCode=`
 // The cache name carries a build stamp, so a new upload retires the old
 // cache instead of serving it forever.
-const CACHE='propledger-821e4d23d9';
+const CACHE='propledger-96aa27dcbf';
 const URLS=[
   self.location.href,
   'https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap',
@@ -4475,8 +4527,11 @@ create table if not exists cca_assets (
   claim         boolean       not null default true,
   disposed_date date,
   proceeds      numeric(14,2),
+  imported_from bigint,
   updated_at    timestamptz default now()
 );
+-- Safe to re-run on a table created before this column existed
+alter table cca_assets add column if not exists imported_from bigint;
 alter table cca_assets enable row level security;
 drop policy if exists "allow all" on cca_assets;
 create policy "allow all" on cca_assets for all using (true) with check (true);
@@ -4501,13 +4556,16 @@ const rowToAsset=r=>({id:r.id,building:r.building,cls:r.cls,description:r.descri
   rateOverride:r.rate_override==null?null:parseFloat(r.rate_override),
   claim:r.claim!==false,
   disposedDate:r.disposed_date||null,
-  proceeds:r.proceeds==null?null:parseFloat(r.proceeds)});
+  proceeds:r.proceeds==null?null:parseFloat(r.proceeds),
+  importedFrom:r.imported_from==null?null:Number(r.imported_from)});
 const assetToRow=a=>({id:a.id,building:a.building,cls:a.cls,description:a.description||null,
   cost:a.cost,land_cost:a.landCost||0,acquired:a.acquired,
   business_pct:a.businessPct==null?100:a.businessPct,
   rate_override:a.rateOverride==null?null:a.rateOverride,
   claim:a.claim!==false,disposed_date:a.disposedDate||null,
-  proceeds:a.proceeds==null?null:a.proceeds,updated_at:new Date().toISOString()});
+  proceeds:a.proceeds==null?null:a.proceeds,
+  imported_from:a.importedFrom==null?null:a.importedFrom,
+  updated_at:new Date().toISOString()});
 
 async function loadCcaFromSupabase(){
   if(!sbClient)return;
@@ -4547,11 +4605,15 @@ function subscribeCcaRealtime(){
 function netBeforeCcaByYear(){
   const out={};
   const touch=y=>{ if(out[y]==null)out[y]=0; };
-  expenses.forEach(e=>{const y=expYear(e); if(Number.isFinite(y)){touch(y);out[y]-=e.amount;}});
+  const done=ccaImportedExpenseIds();
+  expenses.forEach(e=>{const y=expYear(e);
+    if(Number.isFinite(y)&&!done.has(e.id)){touch(y);out[y]-=e.amount;}});
   incomeRows.forEach(r=>{const y=expYear(r); if(Number.isFinite(y)){touch(y);out[y]+=r.amount;}});
   Object.keys(out).forEach(k=>{out[k]=r2(out[k]);});
   return out;
 }
+// Expose for the Summary tab, which must stop treating these as deductible
+window.ccaDepreciatedIds=ccaImportedExpenseIds;
 function ccaYears(){
   const s=new Set(ccaAssets().map(a=>yearOf(a.acquired)).filter(Number.isFinite));
   s.add(new Date().getFullYear());
@@ -4559,6 +4621,105 @@ function ccaYears(){
 }
 function currentCca(){
   return ccaCompute(ccaAssets(), ccaYear||new Date().getFullYear(), netBeforeCcaByYear());
+}
+
+/* ── capital expenses already recorded on the Expenses tab ────────
+   The category list already tags these by class, but that tag was never
+   acted on: they were being deducted in full AND were invisible here.
+   Importing one moves it to the CCA schedule and stops it being claimed
+   as a current expense, so it can never be counted twice. */
+const CAP_GROUP_TO_CLASS={
+  'Capital \u00b7 Class 1':'1','Capital \u00b7 Class 6':'6',
+  'Capital \u00b7 Class 8':'8','Capital \u00b7 Class 12':'12'};
+
+function isCapitalExpense(e){
+  return !!CAP_GROUP_TO_CLASS[e.group] || GROUP_KIND[e.group]==='capital';
+}
+// Imported assets keep the originating expense id, so an expense can only
+// ever produce one asset and the link survives a reload.
+function ccaImportedExpenseIds(){
+  const s=new Set();
+  ccaAssets().forEach(a=>{ if(a.importedFrom!=null)s.add(a.importedFrom); });
+  return s;
+}
+function expenseIsDepreciated(e){ return ccaImportedExpenseIds().has(e.id); }
+// What may actually be deducted this year
+function deductibleExpensesIn(year){
+  const done=ccaImportedExpenseIds();
+  return expensesIn(year).filter(e=>!done.has(e.id));
+}
+function capitalExpensesPending(){
+  const done=ccaImportedExpenseIds();
+  return expenses.filter(e=>isCapitalExpense(e)&&!done.has(e.id));
+}
+
+function renderCcaImport(){
+  const host=document.getElementById('cca-import');
+  if(!host)return;
+  host.innerHTML='';
+  const pending=capitalExpensesPending();
+  if(!pending.length)return;
+  const total=pending.reduce((s,e)=>s+e.amount,0);
+
+  const box=document.createElement('div');
+  box.style.cssText='background:#fdf6e9;border:1.5px solid var(--gold);border-radius:var(--r);'+
+    'padding:14px 16px;margin-bottom:16px;line-height:1.6';
+  const h=document.createElement('div');
+  h.style.cssText='font-family:\'DM Serif Display\',serif;font-size:1rem;color:var(--ink);margin-bottom:4px';
+  setText(h,pending.length+' capital expense'+(pending.length!==1?'s':'')+' not yet on the schedule');
+  const p=document.createElement('div');
+  p.style.cssText='font-size:.78rem;color:var(--ink)';
+  p.innerHTML='You recorded '+fmt(total)+' under capital categories on the Expenses tab. '+
+    'Those are being deducted in full, which overstates the claim — capital spending '+
+    'should be written off over time instead. Importing them moves them here and stops '+
+    'them being deducted as current expenses, so nothing is counted twice.';
+  box.append(h,p);
+
+  const list=document.createElement('div');
+  list.style.cssText='margin:10px 0 4px';
+  pending.slice().sort((a,b)=>a.date.localeCompare(b.date)).forEach(e=>{
+    const b=getBuildings().find(x=>x.id===e.building);
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;justify-content:space-between;gap:8px;font-size:.75rem;'+
+      'padding:5px 0;border-top:1px solid #e8dcc0;color:var(--mid)';
+    const l=document.createElement('span');
+    setText(l,e.category+' · '+(b?b.label:'Building '+e.building)+' · '+e.date+
+      ' → Class '+(CAP_GROUP_TO_CLASS[e.group]||'8'));
+    const r=document.createElement('span');
+    r.style.cssText='white-space:nowrap;font-weight:600;color:var(--ink)';
+    setText(r,fmt(e.amount));
+    row.append(l,r);list.appendChild(row);
+  });
+  box.appendChild(list);
+
+  const btn=document.createElement('button');
+  btn.type='button';btn.className='btn-revenue';btn.style.marginTop='10px';
+  setText(btn,'Import '+pending.length+' into the CCA schedule');
+  btn.addEventListener('click',()=>importCapitalExpenses(pending));
+  box.appendChild(btn);
+  host.appendChild(box);
+}
+
+async function importCapitalExpenses(pending){
+  const list=ccaAssets().slice();
+  const made=[];
+  pending.forEach(e=>{
+    const cls=CAP_GROUP_TO_CLASS[e.group]||'8';
+    const a={id:Date.now()+Math.floor(Math.random()*1000)+made.length,
+      building:e.building,cls,
+      description:(e.description?e.description+' — ':'')+e.category,
+      cost:e.amount,landCost:0,acquired:e.date,businessPct:100,
+      rateOverride:null,
+      // A building is left unclaimed by default, because of recapture on sale
+      claim:!(cls==='1'||cls==='3'),
+      disposedDate:null,proceeds:null,importedFrom:e.id};
+    list.push(a);made.push(a);
+  });
+  if(ccaCache&&!ccaTableMissing)ccaCache=list;
+  cacheCcaLocally(list);
+  for(const a of made){ await pushCcaAsset(a); }
+  renderCca(); renderSummary();
+  showToast('✓ Imported '+made.length+' — now depreciated, not deducted');
 }
 
 /* ── screen ──────────────────────────────────────────────────────── */
@@ -4755,6 +4916,7 @@ function renderCcaSchedule(res){
 
 function renderCca(){
   ccaWarn();
+  renderCcaImport();
   renderCcaYearBar();
   const res=currentCca();
   renderCcaSummary(res);
@@ -4989,6 +5151,269 @@ document.getElementById('tab-cca').addEventListener('click',()=>{
   }
   if(tries>0)setTimeout(()=>waitForCca(tries-1),400);
 })(40);
+</script>
+
+
+<script>
+'use strict';
+/* ═══════════════════════════════════════════════════════════════════
+   T776 FILING SHEET
+   Maps every category to its line on the form. Line numbers verified
+   against the CRA rental income guide.
+   ═══════════════════════════════════════════════════════════════════ */
+
+// Expense category -> T776 line. Anything unmapped falls to 9270 Other.
+const T776_EXPENSE_LINE={
+  'Advertising':'8521',
+  'Building Insurance':'8690','Landlord Insurance':'8690',
+  'Mortgage Interest':'8710','Bank Charges':'8710',
+  'Accounting / Tax Fees':'8860','Legal Fees':'8860',
+  'Property Management Fee':'8871','Letting / Leasing Fee':'8871',
+  'Repairs & Maintenance':'8960','Plumbing':'8960','Electrical':'8960',
+  'Pest Control':'8960','Cleaning':'8960','Carpet / Floor Care':'8960',
+  'Gardening / Lawn Care':'8960','Landscaping':'8960',
+  'Furnace Service & Filters':'8960','Water Heater Service':'8960',
+  'Duct & Vent Cleaning':'8960','Other Building Systems':'8960',
+  'Property Taxes':'9180',
+  'Travel (Inspection)':'9200',
+  'Utilities — Water & Sewer':'9220','Utilities — Electricity':'9220',
+  'Utilities — Heating / Gas':'9220',
+  'Motor Vehicle':'9281',
+  'Supplies':'9270','Miscellaneous':'9270','Condo Fees':'9270',
+  'Equipment Rental & Leasing':'9270','Warranties & Service Contracts':'9270',
+};
+const T776_EXPENSE_LABEL={
+  '8521':'Advertising','8690':'Insurance','8710':'Interest and bank charges',
+  '8810':'Office expenses','8860':'Professional fees',
+  '8871':'Management and administration fees','8960':'Repairs and maintenance',
+  '9060':'Salaries, wages, and benefits','9180':'Property taxes','9200':'Travel',
+  '9220':'Utilities','9281':'Motor vehicle expenses','9270':'Other expenses',
+};
+const T776_EXPENSE_ORDER=['8521','8690','8710','8810','8860','8871','8960',
+  '9060','9180','9200','9220','9281','9270'];
+
+// A refundable deposit is not income until it is retained, so it is held
+// back from the income lines and shown as a memo instead.
+const DEPOSIT_SOURCES=['Caution Deposit'];
+
+let filingYear=null;
+
+function filingYears(){
+  const s=new Set(expenses.map(expYear).filter(Number.isFinite));
+  incomeRows.forEach(r=>{const y=expYear(r); if(Number.isFinite(y))s.add(y);});
+  s.add(new Date().getFullYear());
+  return [...s].sort((a,b)=>b-a);
+}
+
+function buildFiling(year){
+  const depId=(typeof window.ccaDepreciatedIds==='function')?window.ccaDepreciatedIds():new Set();
+  const inc=incomeRows.filter(r=>expYear(r)===year);
+  const exp=expenses.filter(e=>expYear(e)===year);
+
+  // ── income ──
+  let rent=0, other=0, deposits=0;
+  inc.forEach(r=>{
+    if(DEPOSIT_SOURCES.includes(r.source)){deposits+=r.amount;return;}
+    if(r.source==='Rent')rent+=r.amount; else other+=r.amount;
+  });
+  rent=r2(rent); other=r2(other); deposits=r2(deposits);
+  const gross=r2(rent+other);
+
+  // ── expenses, split by line ──
+  const lines={}; T776_EXPENSE_ORDER.forEach(l=>{lines[l]={amount:0,items:[]};});
+  let capitalHeld=0, unmapped=[];
+  exp.forEach(e=>{
+    if(depId.has(e.id)){capitalHeld=r2(capitalHeld+e.amount);return;}   // now in CCA
+    let ln=T776_EXPENSE_LINE[e.category];
+    if(!ln){ ln='9270'; if(!unmapped.includes(e.category))unmapped.push(e.category); }
+    lines[ln].amount=r2(lines[ln].amount+e.amount);
+    if(!lines[ln].items.includes(e.category))lines[ln].items.push(e.category);
+  });
+  const totalExp=r2(T776_EXPENSE_ORDER.reduce((s,l)=>s+lines[l].amount,0));
+  const netBefore=r2(gross-totalExp);
+
+  // ── CCA ──
+  const cca=ccaCompute(ccaAssets(), year, netBeforeCcaByYear());
+  const ccaClaim=r2(cca.totalCCA||0);
+  const recapture=r2(cca.totalRecapture||0);
+  const terminal=r2(cca.totalTerminal||0);
+  const net=r2(netBefore+recapture-terminal-ccaClaim);
+
+  return {year,rent,other,deposits,gross,lines,totalExp,netBefore,
+          ccaClaim,recapture,terminal,net,capitalHeld,unmapped,
+          propertyCount:getBuildings().length};
+}
+
+/* ── screen ──────────────────────────────────────────────────────── */
+function filingRow(host,line,label,amount,opts){
+  const o=opts||{};
+  const row=document.createElement('div');
+  row.className='fl-row'+(o.cls?' '+o.cls:'')+((!o.cls&&amount===0)?' zero':'');
+  const ln=document.createElement('div');ln.className='ln';setText(ln,line||'');
+  const lb=document.createElement('div');
+  setText(lb,label);
+  if(o.detail){
+    const d=document.createElement('span');d.className='fl-detail';
+    setText(d,o.detail);lb.appendChild(d);
+  }
+  const am=document.createElement('div');am.className='amt';
+  setText(am,(amount<0?'-':'')+fmt(Math.abs(amount)));
+  if(o.color)am.style.color=o.color;
+  row.append(ln,lb,am);host.appendChild(row);
+}
+function filingHead(host,text){
+  const h=document.createElement('div');h.className='fl-head';
+  setText(h,text);host.appendChild(h);
+}
+
+function renderFilingYearBar(){
+  const bar=document.getElementById('filing-year-bar');
+  if(!bar)return;
+  const yrs=filingYears();
+  if(filingYear===null||!yrs.includes(filingYear))filingYear=yrs[0];
+  bar.innerHTML='';
+  yrs.forEach(y=>{
+    const b=document.createElement('button');b.type='button';
+    b.className='year-chip'+(y===filingYear?' active':'');
+    setText(b,String(y));
+    b.addEventListener('click',()=>{filingYear=y;renderFiling();});
+    bar.appendChild(b);
+  });
+}
+
+function renderFiling(){
+  renderFilingYearBar();
+  const F=buildFiling(filingYear);
+  const host=document.getElementById('filing-sheet');
+  host.innerHTML='';
+
+  const card=document.createElement('div');card.className='bld-summary-card';
+  const hdr=document.createElement('div');hdr.className='bsc-header';
+  hdr.style.background='#8a5a2b';
+  const t=document.createElement('div');t.className='bsc-title';
+  setText(t,'Form T776 · '+F.year);
+  const v=document.createElement('div');v.className='bsc-total';v.style.color='#fff';
+  setText(v,(F.net<0?'-':'')+fmt(Math.abs(F.net)));
+  hdr.append(t,v);card.appendChild(hdr);
+
+  filingHead(card,'Income');
+  filingRow(card,'8141','Gross rents',F.rent);
+  filingRow(card,'8230','Other income',F.other,
+    {detail:F.other>0?'parking, laundry, storage and similar':null});
+  filingRow(card,'8299','Total gross rental income',F.gross,{cls:'sub'});
+
+  filingHead(card,'Expenses');
+  T776_EXPENSE_ORDER.forEach(l=>{
+    const d=F.lines[l];
+    if(d.amount===0&&d.items.length===0&&['8810','9060'].includes(l))return;
+    filingRow(card,l,T776_EXPENSE_LABEL[l],d.amount,
+      {detail:d.items.length?d.items.join(', '):null});
+  });
+  filingRow(card,'','Total expenses',F.totalExp,{cls:'sub'});
+  filingRow(card,'9369','Net income (loss) before adjustments',F.netBefore,{cls:'sub'});
+
+  filingHead(card,'Capital Cost Allowance');
+  filingRow(card,'9947','Recaptured capital cost allowance',F.recapture,
+    {detail:F.recapture>0?'added to income':null});
+  filingRow(card,'9948','Terminal loss',F.terminal,
+    {detail:F.terminal>0?'deducted':null});
+  filingRow(card,'9936','Total CCA claim for the year',F.ccaClaim,
+    {detail:F.ccaClaim===0&&F.netBefore<=0?'nil — CCA cannot create a rental loss':null});
+  filingRow(card,'9946','Your net income (loss)',F.net,{cls:'total'});
+  host.appendChild(card);
+
+  // ── notes that affect how the figures should be read ──
+  const notes=[];
+  if(F.deposits>0)notes.push('<strong>'+fmt(F.deposits)+' of security deposits is excluded '+
+    'from income.</strong> A refundable deposit is not rental income until you retain it. '+
+    'If any was kept against damage or unpaid rent, add that part to line 8230.');
+  if(F.capitalHeld>0)notes.push(fmt(F.capitalHeld)+' of capital spending is excluded from '+
+    'expenses and written off through CCA instead — see the CCA tab.');
+  if(F.netBefore<=0&&F.ccaClaim===0)notes.push('<strong>No CCA is claimed.</strong> '+
+    'The properties are at a loss before CCA, and CCA cannot create or increase a rental loss.');
+  if(F.unmapped.length)notes.push('These categories have no dedicated line and are grouped '+
+    'under 9270 Other expenses: '+F.unmapped.join(', ')+'.');
+  notes.push('This covers all '+F.propertyCount+' propert'+(F.propertyCount===1?'y':'ies')+
+    ' combined, which is how one T776 is filed. <strong>Area A (CCA) is per property</strong> '+
+    'and is on the CCA tab.');
+  notes.push('<strong>Not included:</strong> any personal-use portion, a co-owner’s share, '+
+    'and anything not recorded in this app. Review with your accountant before filing.');
+
+  const nb=document.createElement('div');
+  nb.style.cssText='font-size:.74rem;color:var(--mid);line-height:1.65;padding:12px 2px 0';
+  notes.forEach(txt=>{
+    const d=document.createElement('div');
+    d.style.cssText='margin-bottom:8px';
+    d.innerHTML='• '+txt;
+    nb.appendChild(d);
+  });
+  host.appendChild(nb);
+
+  const blurb=document.getElementById('filing-export-blurb');
+  if(blurb)setText(blurb,'Every line for '+F.year+' in form order, with the workings beneath.');
+  const bhost=document.getElementById('filing-export-btns');
+  if(bhost){
+    bhost.innerHTML='';
+    const btn=document.createElement('button');
+    btn.className='btn-export';
+    btn.style.cssText='background:transparent;border-color:#b8863b;color:#e0b968';
+    setText(btn,'⬇ T776 Filing Sheet · '+F.year);
+    btn.addEventListener('click',exportFilingCSV);
+    bhost.appendChild(btn);
+  }
+}
+
+function exportFilingCSV(){
+  const F=buildFiling(filingYear);
+  const rows=[];
+  rows.push(['PropLedger — T776 Filing Sheet','Tax year',String(F.year)]);
+  rows.push(['Statement of Real Estate Rentals','Properties',String(F.propertyCount)]);
+  rows.push([]);
+  rows.push(['Line','Description','Amount','Made up of']);
+  rows.push(['','INCOME','','']);
+  rows.push(['8141','Gross rents',F.rent.toFixed(2),'Rent']);
+  rows.push(['8230','Other income',F.other.toFixed(2),'Parking, laundry, storage, other']);
+  rows.push(['8299','Total gross rental income',F.gross.toFixed(2),'']);
+  rows.push(['','EXPENSES','','']);
+  T776_EXPENSE_ORDER.forEach(l=>{
+    const d=F.lines[l];
+    rows.push([l,T776_EXPENSE_LABEL[l],d.amount.toFixed(2),d.items.join('; ')]);
+  });
+  rows.push(['','Total expenses',F.totalExp.toFixed(2),'']);
+  rows.push(['9369','Net income (loss) before adjustments',F.netBefore.toFixed(2),'']);
+  rows.push(['','CAPITAL COST ALLOWANCE','','']);
+  rows.push(['9947','Recaptured capital cost allowance',F.recapture.toFixed(2),'added to income']);
+  rows.push(['9948','Terminal loss',F.terminal.toFixed(2),'deducted']);
+  rows.push(['9936','Total CCA claim for the year',F.ccaClaim.toFixed(2),
+    'Area A detail on the CCA schedule']);
+  rows.push(['9946','Your net income (loss)',F.net.toFixed(2),'']);
+  rows.push([]);
+  rows.push(['NOTES']);
+  if(F.deposits>0)
+    rows.push([fmt(F.deposits)+' of security deposits excluded from income — not income until retained. Add any retained portion to line 8230.']);
+  if(F.capitalHeld>0)
+    rows.push([fmt(F.capitalHeld)+' of capital spending excluded from expenses and written off through CCA instead.']);
+  if(F.netBefore<=0&&F.ccaClaim===0)
+    rows.push(['No CCA claimed — the properties are at a loss before CCA, and CCA cannot create or increase a rental loss.']);
+  if(F.unmapped.length)
+    rows.push(['Grouped under 9270 Other expenses: '+F.unmapped.join('; ')]);
+  rows.push(['Covers all properties combined, as one T776 is filed. Area A is per property — see the CCA schedule.']);
+  rows.push(['Does not include any personal-use portion, a co-owner share, or anything not recorded in the app.']);
+  rows.push(['Prepared from owner records. Please review before filing.']);
+
+  const csv=rows.map(r=>r.map(csvCell).join(',')).join('\r\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='t776_filing_sheet_'+F.year+'.csv';
+  document.body.appendChild(a);a.click();
+  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},100);
+  showToast('Filing sheet exported');
+}
+
+document.getElementById('tab-filing').addEventListener('click',()=>{
+  showTab('filing'); renderFiling();
+});
 </script>
 
 </body>
