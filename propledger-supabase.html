@@ -165,6 +165,20 @@
     box-shadow:0 2px 16px rgba(26,58,92,.22)}
   .mort-banner{background:linear-gradient(135deg,#6b2d5c,#451d3c);border-color:#38152f;
     box-shadow:0 2px 16px rgba(107,45,92,.22)}
+  .cca-banner{background:linear-gradient(135deg,#4a3a6b,#2b2040);border-color:#221a33;
+    box-shadow:0 2px 16px rgba(74,58,107,.22)}
+  .tab-btn#tab-cca{border-color:#4a3a6b;color:#b09ad6}
+  .tab-btn#tab-cca.active{background:#4a3a6b;border-color:#4a3a6b;color:#fff}
+  .cca-row{display:grid;grid-template-columns:1.6fr 1fr;gap:4px;padding:8px 14px;
+    border-top:1px solid var(--border);font-size:.78rem}
+  .cca-row:nth-child(even){background:var(--paper)}
+  .cca-row .r{text-align:right;font-variant-numeric:tabular-nums}
+  .cca-row.key{font-weight:600;background:#f3effa}
+  .cca-note{font-size:.72rem;color:var(--mid);line-height:1.6;padding:4px 2px 0}
+  .cca-flag{display:inline-block;padding:1px 7px;border-radius:4px;font-size:.62rem;
+    font-weight:600;letter-spacing:.04em;text-transform:uppercase;margin-left:6px}
+  .cca-flag.warn{background:#fdf0e6;color:#b35309}
+  .cca-flag.off{background:var(--cream);color:var(--mid)}
   .sched-wrap{background:var(--card);border:1px solid var(--border);border-radius:var(--r);
     box-shadow:var(--shadow);overflow:hidden;margin-bottom:14px}
   .sched-head{display:grid;grid-template-columns:1.1fr 1fr 1fr 1.15fr;gap:4px;
@@ -392,6 +406,7 @@
   <button class="tab-btn rev-tab" id="tab-revenue">↓ Revenue</button>
   <button class="tab-btn rev-tab" id="tab-net">⇄ Net</button>
   <button class="tab-btn rev-tab" id="tab-mortgage">⌂ Mortgage</button>
+  <button class="tab-btn rev-tab" id="tab-cca">⌗ CCA</button>
   <button class="tab-btn" id="tab-settings">⚙</button>
 </div>
 
@@ -557,6 +572,13 @@
   <div class="building-toggle" id="rev-list-bld-toggle"></div>
   <div class="filter-bar" id="rev-filter-bar"></div>
   <div id="revenue-list" class="expense-list"></div>
+  <div class="export-card" style="border-color:var(--sage)">
+    <h3 style="color:#7fb89a">Income Export</h3>
+    <p id="rev-export-blurb">A separate file from the expense export, which is how
+      an accountant wants it — income and expenses are distinct lines on the T776.</p>
+    <div class="year-bar" id="rev-export-years" style="margin-bottom:10px"></div>
+    <div class="export-btns" id="rev-export-btns"></div>
+  </div>
 </div>
 
 <div id="screen-net" class="screen scrollable">
@@ -656,6 +678,112 @@
   <div class="rev-field-label">Property</div>
   <div class="building-toggle" id="mort-sched-toggle"></div>
   <div id="mortgage-schedule"></div>
+</div>
+
+<div id="screen-cca" class="screen scrollable">
+  <div class="rev-banner cca-banner">
+    <div class="rev-banner-t">Capital Cost Allowance</div>
+    <div class="rev-banner-s">Capital spending written off over time, as T776 Area A.</div>
+  </div>
+  <div class="rev-setup-warn" id="cca-setup-warn">
+    <strong style="color:var(--rust)">Capital assets are not syncing yet.</strong>
+    They are saved on this device only. Run the SQL below in Supabase (SQL Editor),
+    then reopen this tab.
+    <div id="cca-sql-box" style="font-family:monospace;font-size:.68rem;background:#0d0d14;
+      color:#a8d8a8;padding:10px;border-radius:6px;margin-top:8px;white-space:pre-wrap;
+      word-break:break-word;max-height:200px;overflow:auto"></div>
+    <button type="button" id="copy-cca-sql-btn"
+      style="margin-top:8px;background:var(--sage);border:none;color:#fff;
+      font-family:'DM Sans',sans-serif;font-size:.74rem;font-weight:600;padding:8px 14px;
+      border-radius:6px;cursor:pointer;min-height:36px">Copy SQL</button>
+    <button type="button" id="cca-recheck-btn"
+      style="margin-top:8px;margin-left:8px;background:var(--rust);border:none;color:#fff;
+      font-family:'DM Sans',sans-serif;font-size:.74rem;font-weight:600;padding:8px 14px;
+      border-radius:6px;cursor:pointer;min-height:36px">Check again</button>
+  </div>
+  <div class="year-bar" id="cca-year-bar"></div>
+  <div id="cca-summary"></div>
+  <div class="section-title">Capital Assets</div>
+  <div id="cca-asset-list"></div>
+  <button class="btn-revenue" id="cca-add-btn" type="button" style="margin-bottom:18px">＋ Add a capital asset</button>
+  <div class="section-title">T776 Area A — Class Detail</div>
+  <div id="cca-schedule"></div>
+  <div class="export-card" style="border-color:#8e6fb0">
+    <h3 style="color:#c3a8e0">CCA Export</h3>
+    <p id="cca-export-blurb">Area A columns in the order the form uses, for your accountant.</p>
+    <div class="export-btns" id="cca-export-btns"></div>
+  </div>
+</div>
+
+<!-- Capital asset modal -->
+<div class="modal-overlay" id="cca-modal" role="dialog" aria-modal="true">
+  <div class="modal-box">
+    <div class="modal-title" id="cca-modal-title">Capital Asset</div>
+    <div class="form-row">
+      <label>Property</label>
+      <select id="cca-bld"></select>
+    </div>
+    <div class="form-row">
+      <label>CCA Class</label>
+      <select id="cca-cls"></select>
+      <div style="font-size:.68rem;color:var(--mid);margin-top:4px" id="cca-cls-hint"></div>
+    </div>
+    <div class="form-row">
+      <label>Description</label>
+      <input type="text" id="cca-desc" maxlength="120" placeholder="e.g. Basement development">
+      <div class="field-error" id="err-cca-desc">Describe the asset</div>
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label>Total Cost ($)</label>
+        <input type="number" id="cca-cost" step="0.01" min="0" inputmode="decimal" placeholder="40000">
+        <div class="field-error" id="err-cca-cost">Enter the cost</div>
+      </div>
+      <div class="form-row">
+        <label>Of Which Land ($)</label>
+        <input type="number" id="cca-land" step="0.01" min="0" inputmode="decimal" placeholder="0">
+      </div>
+    </div>
+    <div class="form-grid">
+      <div class="form-row">
+        <label>Available For Use</label>
+        <input type="date" id="cca-acquired">
+        <div class="field-error" id="err-cca-acquired">Select a date</div>
+      </div>
+      <div class="form-row">
+        <label>Rented Share (%)</label>
+        <input type="number" id="cca-pct" step="1" min="1" max="100" inputmode="numeric" placeholder="100">
+      </div>
+    </div>
+    <div class="form-row">
+      <label>Rate Override (% / yr) <span style="font-weight:400;text-transform:none;font-size:.68rem">(optional)</span></label>
+      <input type="number" id="cca-rate" step="0.1" min="0" max="100" inputmode="decimal" placeholder="use the class rate">
+    </div>
+    <div class="form-row" style="background:var(--paper);border:1px solid var(--border);border-radius:8px;padding:11px 13px">
+      <label style="margin-bottom:6px">Claim CCA on this asset?</label>
+      <select id="cca-claim">
+        <option value="yes">Yes — claim each year</option>
+        <option value="no">No — hold the pool, claim nothing</option>
+      </select>
+      <div style="font-size:.68rem;color:var(--mid);margin-top:6px;line-height:1.55">
+        Claiming CCA on a building lowers tax now but is recaptured as income when you
+        sell. Many owners decline on buildings for that reason, which is why this
+        defaults to No for Class 1 and 3.
+      </div>
+    </div>
+    <div class="form-row" style="margin-bottom:4px">
+      <label>Disposed Of <span style="font-weight:400;text-transform:none;font-size:.68rem">(leave blank if still held)</span></label>
+      <div class="form-grid">
+        <input type="date" id="cca-disp-date">
+        <input type="number" id="cca-proceeds" step="0.01" min="0" inputmode="decimal" placeholder="Proceeds $">
+      </div>
+    </div>
+    <div class="modal-actions">
+      <button class="modal-btn primary" id="cca-save-btn">Save</button>
+      <button class="modal-btn" id="cca-cancel-btn" style="background:var(--cream);color:var(--ink)">Cancel</button>
+    </div>
+    <button class="btn-secondary" id="cca-delete-btn" type="button" style="border-color:var(--rust);color:var(--rust)">Remove this asset</button>
+  </div>
 </div>
 
 <!-- Mortgage setup modal -->
@@ -2836,6 +2964,67 @@ function showIncDupModal(dupes,cand){
 }
 
 // ── list ───────────────────────────────────────────────────────────
+let revExportYear=null;
+function incomeYears(){
+  const s=new Set(incomeRows.map(expYear).filter(Number.isFinite));
+  s.add(new Date().getFullYear());
+  return [...s].sort((a,b)=>b-a);
+}
+function exportIncomeCSV(bld){
+  const yr=revExportYear||incomeYears()[0];
+  const scoped=incomeRows.filter(r=>expYear(r)===yr);
+  const data=bld?scoped.filter(r=>r.building===bld):scoped;
+  if(!data.length){showToast('Nothing to export for '+yr);return;}
+  const rows=[['Date','Building','Source','Amount','Tenant / Payer','Notes']];
+  data.slice().sort((a,b)=>a.date.localeCompare(b.date)).forEach(r=>{
+    const b=getBuildings().find(x=>x.id===r.building);
+    rows.push([r.date,b?b.label:'Building '+r.building,r.source,
+      r.amount.toFixed(2),r.description||'',r.notes||'']);
+  });
+  // A total row: the figure that goes on the T776 income line
+  rows.push([]);
+  rows.push(['','','TOTAL',data.reduce((s,r)=>s+r.amount,0).toFixed(2),'','']);
+  const csv=rows.map(r=>r.map(csvCell).join(',')).join('\r\n');
+  const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;
+  a.download=(bld?'income_building'+bld:'income_all')+'_'+yr+'.csv';
+  document.body.appendChild(a);a.click();
+  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},100);
+  showToast('Income CSV exported');
+}
+function renderRevExport(){
+  const yrs=incomeYears();
+  if(revExportYear===null||!yrs.includes(revExportYear))revExportYear=yrs[0];
+  const bar=document.getElementById('rev-export-years');
+  if(bar){
+    bar.innerHTML='';
+    yrs.forEach(y=>{
+      const b=document.createElement('button');b.type='button';
+      b.className='year-chip'+(y===revExportYear?' active':'');
+      setText(b,String(y));
+      b.addEventListener('click',()=>{revExportYear=y;renderRevExport();});
+      bar.appendChild(b);
+    });
+  }
+  const blurb=document.getElementById('rev-export-blurb');
+  if(blurb)setText(blurb,'Exports the '+revExportYear+
+    ' tax year as its own file. A CSV holds one table, so income and expenses '+
+    'are separate files rather than two tabs.');
+  const host=document.getElementById('rev-export-btns');
+  if(!host)return;
+  host.innerHTML='';
+  [{label:'\u2b07 All Properties \u00b7 '+revExportYear,bld:0,cls:'sage-e'},
+   ...getBuildings().map(b=>({label:'\u2b07 '+b.label+' \u00b7 '+revExportYear,
+     bld:b.id,cls:'sage-e'}))].forEach(({label,bld,cls})=>{
+    const btn=document.createElement('button');
+    btn.className='btn-export '+cls;setText(btn,label);
+    btn.addEventListener('click',()=>exportIncomeCSV(bld));
+    host.appendChild(btn);
+  });
+}
+
 function buildRevFilter(){
   const bar=document.getElementById('rev-filter-bar');
   if(!bar)return;
@@ -2853,6 +3042,7 @@ function buildRevFilter(){
 function renderRevenue(){
   revWarn();
   buildRevFilter();
+  renderRevExport();
   const list=document.getElementById('revenue-list');
   if(!list)return;
   list.innerHTML='';
@@ -4066,6 +4256,692 @@ document.getElementById('cfg-connect-btn').addEventListener('click',()=>{
     if(t++<25)setTimeout(retry,400);
   })();
 });
+</script>
+
+
+<script>
+'use strict';
+/* ═══════════════════════════════════════════════════════════════════
+   CAPITAL COST ALLOWANCE — Canadian rental property (T776 Area A)
+   ═══════════════════════════════════════════════════════════════════ */
+
+const CCA_CLASSES=[
+  {cls:'1',   rate:4,   label:'Class 1 — Building (4%)',
+   hint:'Buildings acquired after 1987. Each rental building costing $50,000 or more sits in its own class.'},
+  {cls:'1-PBR',rate:10, label:'Class 1 — New purpose-built rental (10%)',
+   hint:'Enhanced rate for eligible new purpose-built rental housing. Confirm eligibility with your accountant.'},
+  {cls:'3',   rate:5,   label:'Class 3 — Older building (5%)',
+   hint:'Buildings acquired before 1988.'},
+  {cls:'6',   rate:10,  label:'Class 6 — Fence, greenhouse, shed (10%)',
+   hint:'Fences, outdoor structures, and certain frame buildings.'},
+  {cls:'8',   rate:20,  label:'Class 8 — Appliances, furniture, equipment (20%)',
+   hint:'Appliances, furnishings, shelving, outdoor signs, and most equipment not in another class.'},
+  {cls:'10',  rate:30,  label:'Class 10 — Vehicles (30%)',
+   hint:'Motor vehicles under the Class 10.1 cost limit.'},
+  {cls:'12',  rate:100, label:'Class 12 — Linens, tools, dishes (100%)',
+   hint:'Small items written off in full. Some Class 12 property is still subject to the first-year rule.'},
+  {cls:'13',  rate:0,   label:'Class 13 — Leasehold improvements (straight line)',
+   hint:'Written off over the lease term rather than declining balance. Enter the annual amount manually.'},
+  {cls:'50',  rate:55,  label:'Class 50 — Computer equipment (55%)',
+   hint:'Computers and systems software acquired after March 18, 2007.'},
+];
+const CCA_RATE={}; CCA_CLASSES.forEach(c=>{CCA_RATE[c.cls]=c.rate;});
+const SEPARATE_CLASS_MIN=50000;          // rental buildings at or above this get their own class
+const ACCII_START='2018-11-21';          // AccII applies to property acquired after Nov 20, 2018
+
+const r2=v=>Math.round((Number(v)||0)*100)/100;
+const yearOf=d=>parseInt(String(d||'').slice(0,4),10);
+
+// Depreciable cost: land is never depreciable, and only the rented share counts
+function depreciableCost(a){
+  const gross=(Number(a.cost)||0)-(Number(a.landCost)||0);
+  const pct=a.businessPct==null?100:Number(a.businessPct);
+  return r2(Math.max(0,gross)*(pct/100));
+}
+function assetRate(a){
+  if(a.rateOverride!=null&&a.rateOverride!=='')return Number(a.rateOverride);
+  return CCA_RATE[a.cls]!=null?CCA_RATE[a.cls]:0;
+}
+// A building at or above the threshold is its own pool; everything else shares by class
+function poolKey(a){
+  const sep=(a.cls==='1'||a.cls==='1-PBR'||a.cls==='3')&&depreciableCost(a)>=SEPARATE_CLASS_MIN;
+  return a.building+'|'+a.cls+'|'+(sep?('sep'+a.id):'shared');
+}
+function isSeparatePool(a){ return poolKey(a).indexOf('|sep')>-1; }
+
+/* First-year rule. Three regimes, decided by when the property was acquired:
+     before Nov 21 2018          half-year rule: base reduced by 50% of net additions
+     2019 to 2023                AccII: half-year suspended, plus a 50% enhancement
+     2024 to 2027                AccII phase-out: half-year suspended, no enhancement
+     2028 onward                 half-year rule returns
+   Returned as a factor applied to the net addition. */
+function firstYearFactor(acquired){
+  const d=String(acquired||'');
+  if(d<ACCII_START)return -0.5;          // half-year
+  const y=yearOf(d);
+  if(y<=2023)return 0.5;                 // AccII enhanced
+  if(y<=2027)return 0;                   // AccII phase-out — full base, no enhancement
+  return -0.5;                           // back to half-year
+}
+
+/* Runs one pool through a single year. */
+function stepPool(opening, additions, dispCredit, adjRaw, rate, claim, capFactor){
+  const uccAfter=r2(opening+additions-dispCredit);
+  const netAdd=r2(additions-dispCredit);
+  // The first-year adjustment only bites on a positive net addition
+  const adj = netAdd>0 ? r2(adjRaw*(additions>0?Math.min(1,netAdd/additions):0)) : 0;
+  const base=r2(Math.max(0,uccAfter+adj));
+
+  let recapture=0, terminalLoss=0, maxCCA=0;
+  if(uccAfter<0){
+    recapture=r2(-uccAfter);             // negative UCC comes back into income
+  }else if(uccAfter>0&&additions===0&&dispCredit>0&&claim==='empty'){
+    terminalLoss=r2(uccAfter);           // nothing left in the class
+  }else{
+    maxCCA=r2(base*rate/100);
+    if(maxCCA>uccAfter)maxCCA=r2(Math.max(0,uccAfter));   // never below zero
+  }
+  const cca=r2(maxCCA*capFactor);
+  const closing=r2(recapture?0:(terminalLoss?0:uccAfter-cca));
+  return {opening:r2(opening),additions:r2(additions),dispCredit:r2(dispCredit),
+          uccAfter,adj,base,rate,maxCCA,cca,closing,recapture,terminalLoss};
+}
+
+/* Full computation for one tax year.
+   `assets`      every capital asset
+   `netBefore`   rental income less deductible expenses, before CCA, for each year
+   CCA may not create or increase a rental loss, so the total claim is capped. */
+function ccaCompute(assets, year, netBeforeByYear){
+  const live=assets.filter(a=>a&&a.cls&&yearOf(a.acquired)<=year);
+  if(!live.length)return {pools:[],totalCCA:0,totalRecapture:0,totalTerminal:0,
+                          capApplied:false,maxClaim:0,uncapped:0};
+
+  const firstYear=Math.min(...live.map(a=>yearOf(a.acquired)));
+  const pools={};
+  live.forEach(a=>{ (pools[poolKey(a)]=pools[poolKey(a)]||[]).push(a); });
+
+  const carried={};                       // closing UCC per pool, year to year
+  let result=null;
+
+  for(let y=firstYear;y<=year;y++){
+    const rows=[];
+    Object.keys(pools).forEach(key=>{
+      const members=pools[key];
+      const sample=members[0];
+      const rate=assetRate(sample);
+      const opening=carried[key]||0;
+
+      let additions=0, adjRaw=0, dispCredit=0, disposedThisYear=false;
+      members.forEach(a=>{
+        if(yearOf(a.acquired)===y){
+          const c=depreciableCost(a);
+          additions=r2(additions+c);
+          adjRaw=r2(adjRaw+c*firstYearFactor(a.acquired));
+        }
+        if(a.disposedDate&&yearOf(a.disposedDate)===y){
+          // Credit is the lesser of proceeds and the original capital cost
+          const credit=Math.min(Number(a.proceeds)||0, depreciableCost(a));
+          dispCredit=r2(dispCredit+credit);
+          disposedThisYear=true;
+        }
+      });
+      // Is anything still held in this pool at year end?
+      const anyLeft=members.some(a=>!a.disposedDate||yearOf(a.disposedDate)>y);
+      const claimFlag=(!anyLeft&&disposedThisYear)?'empty':'normal';
+      // The owner may decline to claim on a pool — common for buildings, to avoid recapture on sale
+      const wants=members.some(a=>a.claim!==false);
+      rows.push({key,members,sample,rate,opening,additions,dispCredit,adjRaw,claimFlag,wants});
+    });
+
+    // First pass with no cap, to find the maximum claim
+    const dry=rows.map(r=>stepPool(r.opening,r.additions,r.dispCredit,r.adjRaw,
+                                   r.wants?r.rate:0,r.claimFlag,1));
+    const uncapped=r2(dry.reduce((s,d)=>s+d.cca,0));
+    const recap=r2(dry.reduce((s,d)=>s+d.recapture,0));
+    const term=r2(dry.reduce((s,d)=>s+d.terminalLoss,0));
+
+    // CCA cannot create or increase a rental loss
+    const netBefore=r2((netBeforeByYear&&netBeforeByYear[y]!=null?netBeforeByYear[y]:0)+recap-term);
+    const maxClaim=r2(Math.max(0,netBefore));
+    const capFactor=uncapped>0?Math.min(1,maxClaim/uncapped):1;
+
+    const final=rows.map((r,i)=>{
+      const d=stepPool(r.opening,r.additions,r.dispCredit,r.adjRaw,
+                       r.wants?r.rate:0,r.claimFlag,capFactor);
+      carried[r.key]=d.closing;
+      return Object.assign({},d,{key:r.key,building:r.sample.building,cls:r.sample.cls,
+        separate:isSeparatePool(r.sample),
+        description:r.members.map(m=>m.description||'Asset').join('; '),
+        members:r.members, declined:!r.wants});
+    });
+
+    if(y===year){
+      result={pools:final,
+        totalCCA:r2(final.reduce((s,d)=>s+d.cca,0)),
+        totalRecapture:recap, totalTerminal:term,
+        uncapped, maxClaim, netBefore,
+        capApplied:capFactor<1};
+    }
+  }
+  return result;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   CCA — storage, screen and export
+   ═══════════════════════════════════════════════════════════════════ */
+const CCA_SQL = `-- Capital assets for the CCA schedule, synced across devices.
+create table if not exists cca_assets (
+  id            bigint primary key,
+  building      int           not null,
+  cls           text          not null,
+  description   text,
+  cost          numeric(14,2) not null,
+  land_cost     numeric(14,2) not null default 0,
+  acquired      date          not null,
+  business_pct  numeric(5,2)  not null default 100,
+  rate_override numeric(6,3),
+  claim         boolean       not null default true,
+  disposed_date date,
+  proceeds      numeric(14,2),
+  updated_at    timestamptz default now()
+);
+alter table cca_assets enable row level security;
+drop policy if exists "allow all" on cca_assets;
+create policy "allow all" on cca_assets for all using (true) with check (true);
+-- Grants are separate from RLS; without them every request fails with 42501.
+grant usage on schema public to anon, authenticated;
+grant all on table cca_assets to anon, authenticated;`;
+
+const CCA_KEY='propledger_cca_assets';
+let ccaCache=null, ccaTableMissing=false, ccaYear=null, ccaEditId=null;
+
+function localCcaAssets(){
+  try{ const raw=localStorage.getItem(CCA_KEY);
+    if(!raw)return []; const p=JSON.parse(raw);
+    return Array.isArray(p)?p:[]; }catch{ return []; }
+}
+function ccaAssets(){ return (ccaCache&&!ccaTableMissing)?ccaCache:localCcaAssets(); }
+function cacheCcaLocally(list){ try{ localStorage.setItem(CCA_KEY,JSON.stringify(list)); }catch{} }
+
+const rowToAsset=r=>({id:r.id,building:r.building,cls:r.cls,description:r.description||'',
+  cost:parseFloat(r.cost),landCost:parseFloat(r.land_cost||0),acquired:r.acquired,
+  businessPct:parseFloat(r.business_pct==null?100:r.business_pct),
+  rateOverride:r.rate_override==null?null:parseFloat(r.rate_override),
+  claim:r.claim!==false,
+  disposedDate:r.disposed_date||null,
+  proceeds:r.proceeds==null?null:parseFloat(r.proceeds)});
+const assetToRow=a=>({id:a.id,building:a.building,cls:a.cls,description:a.description||null,
+  cost:a.cost,land_cost:a.landCost||0,acquired:a.acquired,
+  business_pct:a.businessPct==null?100:a.businessPct,
+  rate_override:a.rateOverride==null?null:a.rateOverride,
+  claim:a.claim!==false,disposed_date:a.disposedDate||null,
+  proceeds:a.proceeds==null?null:a.proceeds,updated_at:new Date().toISOString()});
+
+async function loadCcaFromSupabase(){
+  if(!sbClient)return;
+  try{
+    const {data,error}=await sbClient.from('cca_assets').select('*');
+    if(error){ ccaTableMissing = error.code!=='PGRST116'; if(ccaTableMissing)return; }
+    ccaTableMissing=false;
+    let list=(data||[]).map(rowToAsset);
+    // Lift anything configured on this device before the table existed
+    const local=localCcaAssets();
+    for(const a of local){
+      if(!list.some(x=>x.id===a.id)){ list.push(a); await pushCcaAsset(a); }
+    }
+    ccaCache=list; cacheCcaLocally(list);
+  }catch{ ccaTableMissing=true; }
+}
+async function pushCcaAsset(a){
+  if(!sbClient||ccaTableMissing)return false;
+  try{ const {error}=await sbClient.from('cca_assets').upsert(assetToRow(a)); return !error; }
+  catch{ return false; }
+}
+async function removeCcaAssetRemote(id){
+  if(!sbClient||ccaTableMissing)return false;
+  try{ const {error}=await sbClient.from('cca_assets').delete().eq('id',id); return !error; }
+  catch{ return false; }
+}
+function subscribeCcaRealtime(){
+  if(!sbClient||ccaTableMissing)return;
+  sbClient.channel('cca-changes')
+    .on('postgres_changes',{event:'*',schema:'public',table:'cca_assets'},()=>{
+      loadCcaFromSupabase().then(renderCca);
+    }).subscribe();
+}
+
+/* Net rental income before CCA, per year — the ceiling on the claim.
+   Mortgage interest is already among the expenses; principal is not, correctly. */
+function netBeforeCcaByYear(){
+  const out={};
+  const touch=y=>{ if(out[y]==null)out[y]=0; };
+  expenses.forEach(e=>{const y=expYear(e); if(Number.isFinite(y)){touch(y);out[y]-=e.amount;}});
+  incomeRows.forEach(r=>{const y=expYear(r); if(Number.isFinite(y)){touch(y);out[y]+=r.amount;}});
+  Object.keys(out).forEach(k=>{out[k]=r2(out[k]);});
+  return out;
+}
+function ccaYears(){
+  const s=new Set(ccaAssets().map(a=>yearOf(a.acquired)).filter(Number.isFinite));
+  s.add(new Date().getFullYear());
+  return [...s].sort((a,b)=>b-a);
+}
+function currentCca(){
+  return ccaCompute(ccaAssets(), ccaYear||new Date().getFullYear(), netBeforeCcaByYear());
+}
+
+/* ── screen ──────────────────────────────────────────────────────── */
+function ccaWarn(){
+  const w=document.getElementById('cca-setup-warn');
+  if(w)w.style.display=ccaTableMissing?'block':'none';
+}
+function ccaLine(host,label,val,opts){
+  const o=opts||{};
+  const row=document.createElement('div');
+  row.className='cca-row'+(o.key?' key':'');
+  const l=document.createElement('div');
+  setText(l,label);
+  if(o.flag){
+    const f=document.createElement('span');
+    f.className='cca-flag '+(o.flagKind||'off');
+    setText(f,o.flag); l.appendChild(f);
+  }
+  const v=document.createElement('div');v.className='r';
+  setText(v,val);
+  if(o.color)v.style.color=o.color;
+  row.append(l,v);host.appendChild(row);
+  return row;
+}
+
+function renderCcaYearBar(){
+  const bar=document.getElementById('cca-year-bar');
+  if(!bar)return;
+  const yrs=ccaYears();
+  if(ccaYear===null||!yrs.includes(ccaYear))ccaYear=yrs[0];
+  bar.innerHTML='';
+  yrs.forEach(y=>{
+    const b=document.createElement('button');b.type='button';
+    b.className='year-chip'+(y===ccaYear?' active':'');
+    setText(b,String(y));
+    b.addEventListener('click',()=>{ccaYear=y;renderCca();});
+    bar.appendChild(b);
+  });
+}
+
+function renderCcaSummary(res){
+  const host=document.getElementById('cca-summary');
+  host.innerHTML='';
+  const card=document.createElement('div');card.className='bld-summary-card';
+  const hdr=document.createElement('div');hdr.className='bsc-header';
+  hdr.style.background='#4a3a6b';
+  const t=document.createElement('div');t.className='bsc-title';
+  setText(t,'CCA Claim · '+ccaYear);
+  const v=document.createElement('div');v.className='bsc-total';v.style.color='#fff';
+  setText(v,fmt(res.totalCCA));
+  hdr.append(t,v);card.appendChild(hdr);
+
+  ccaLine(card,'Net rental income before CCA',fmt(res.netBefore||0));
+  if(res.totalRecapture>0)
+    ccaLine(card,'Recapture — T776 line 9947',fmt(res.totalRecapture),{color:'var(--rust)'});
+  if(res.totalTerminal>0)
+    ccaLine(card,'Terminal loss — T776 line 9948',fmt(res.totalTerminal),{color:'#1e8449'});
+  ccaLine(card,'Maximum claim available',fmt(res.uncapped||0));
+  ccaLine(card,'Claimed this year — T776 line 9936',fmt(res.totalCCA),{key:true});
+  host.appendChild(card);
+
+  const note=document.createElement('div');
+  note.className='cca-note';
+  if(res.capApplied){
+    note.innerHTML='<strong>The claim was capped.</strong> CCA cannot create or increase a '+
+      'rental loss, so only '+fmt(res.totalCCA)+' of the '+fmt(res.uncapped)+
+      ' available could be claimed. The remainder stays in the pools for future years.';
+    note.style.color='var(--rust)';
+  }else{
+    note.innerHTML='CCA is optional and you may claim any amount from zero up to the maximum. '+
+      'Unclaimed amounts stay in the pool and are available in later years.';
+  }
+  host.appendChild(note);
+}
+
+function renderCcaAssets(){
+  const host=document.getElementById('cca-asset-list');
+  host.innerHTML='';
+  const list=ccaAssets().slice().sort((a,b)=>String(a.acquired).localeCompare(b.acquired));
+  if(!list.length){
+    const e=document.createElement('div');e.className='empty-state';
+    e.innerHTML='<div class="es-icon">\u{1F3D7}</div>';
+    const p=document.createElement('p');
+    setText(p,'No capital assets yet. A basement development, a new roof, appliances — anything that betters the property rather than restoring it.');
+    e.appendChild(p);host.appendChild(e);return;
+  }
+  list.forEach(a=>{
+    const b=getBuildings().find(x=>x.id===a.building);
+    const item=document.createElement('div');
+    item.className='expense-item';
+    item.style.borderLeft='3px solid #4a3a6b';
+    const main=document.createElement('div');main.className='ei-main';
+    const dot=document.createElement('div');dot.className='ei-cat-dot';dot.style.background='#4a3a6b';
+    const body=document.createElement('div');body.className='ei-body';
+    const title=document.createElement('div');title.className='ei-title';
+    setText(title,a.description||'Capital asset');
+    const meta=document.createElement('div');meta.className='ei-meta';
+    const tag=document.createElement('span');tag.className='ei-bld-tag';
+    tag.style.background=b?b.color:'#888';tag.style.color='#fff';
+    setText(tag,b?b.label:'Building '+a.building);
+    const cl=document.createElement('span');
+    const ci=CCA_CLASSES.find(x=>x.cls===a.cls);
+    setText(cl,(ci?ci.label.split(' — ')[0]:'Class '+a.cls)+' · '+assetRate(a)+'%');
+    const dt=document.createElement('span');
+    setText(dt,new Date(a.acquired+'T12:00:00').toLocaleDateString('en-CA',
+      {day:'numeric',month:'short',year:'numeric'}));
+    meta.append(tag,cl,dt);body.append(title,meta);
+    const amt=document.createElement('div');amt.className='ei-amount';
+    setText(amt,fmt(depreciableCost(a)));
+    main.append(dot,body,amt);item.appendChild(main);
+
+    const bits=[];
+    if(a.landCost>0)bits.push('land '+fmt(a.landCost)+' excluded');
+    if(a.businessPct!=null&&a.businessPct<100)bits.push(a.businessPct+'% rented share');
+    if(a.claim===false)bits.push('not claiming');
+    if(a.disposedDate)bits.push('disposed '+a.disposedDate+' for '+fmt(a.proceeds||0));
+    if(bits.length){
+      const d=document.createElement('div');d.className='ei-desc';
+      setText(d,bits.join(' · '));item.appendChild(d);
+    }
+    const act=document.createElement('div');act.className='ei-actions';
+    const eb=document.createElement('button');eb.className='ei-btn';setText(eb,'✎ Edit');
+    eb.addEventListener('click',()=>openCcaModal(a.id));
+    act.appendChild(eb);item.appendChild(act);
+    host.appendChild(item);
+  });
+}
+
+function renderCcaSchedule(res){
+  const host=document.getElementById('cca-schedule');
+  host.innerHTML='';
+  if(!res.pools.length){
+    const e=document.createElement('div');e.className='empty-state';
+    e.innerHTML='<div class="es-icon">\u{1F4D0}</div>';
+    const p=document.createElement('p');
+    setText(p,'Nothing to schedule for '+ccaYear+'.');
+    e.appendChild(p);host.appendChild(e);return;
+  }
+  res.pools.forEach(d=>{
+    const b=getBuildings().find(x=>x.id===d.building);
+    const ci=CCA_CLASSES.find(x=>x.cls===d.cls);
+    const card=document.createElement('div');card.className='bld-summary-card';
+    const hdr=document.createElement('div');hdr.className='bsc-header';
+    hdr.style.background=b?b.color:'#4a3a6b';
+    const t=document.createElement('div');t.className='bsc-title';
+    setText(t,(b?b.label:'Building '+d.building)+' · '+
+      (ci?ci.label.split(' — ')[0]:'Class '+d.cls));
+    const v=document.createElement('div');v.className='bsc-total';v.style.color='#fff';
+    setText(v,fmt(d.cca));
+    hdr.append(t,v);card.appendChild(hdr);
+
+    const sub=document.createElement('div');
+    sub.style.cssText='padding:8px 14px;font-size:.72rem;color:var(--mid);background:var(--paper)';
+    setText(sub,d.description+(d.separate?' — own class (building of $50,000 or more)':''));
+    card.appendChild(sub);
+
+    ccaLine(card,'2 · Opening UCC',fmt(d.opening));
+    ccaLine(card,'3 · Cost of additions',fmt(d.additions));
+    ccaLine(card,'5 · Proceeds of dispositions',fmt(d.dispCredit));
+    ccaLine(card,'6 · UCC after additions and dispositions',fmt(d.uccAfter));
+    if(d.adj!==0)
+      ccaLine(card,(d.adj>0?'8 · Accelerated investment adjustment'
+                           :'9 · First-year (half-year) adjustment'),
+        (d.adj<0?'-':'')+fmt(Math.abs(d.adj)));
+    ccaLine(card,'10 · Base amount for CCA',fmt(d.base));
+    ccaLine(card,'11 · Rate',d.rate+'%');
+    if(d.recapture>0)
+      ccaLine(card,'Recapture — line 9947',fmt(d.recapture),{color:'var(--rust)',
+        flag:'income',flagKind:'warn'});
+    if(d.terminalLoss>0)
+      ccaLine(card,'Terminal loss — line 9948',fmt(d.terminalLoss),{color:'#1e8449',
+        flag:'deduction',flagKind:'warn'});
+    ccaLine(card,'12 · CCA claimed',fmt(d.cca),
+      {key:true,flag:d.declined?'not claiming':null,flagKind:'off'});
+    ccaLine(card,'13 · Closing UCC',fmt(d.closing));
+    host.appendChild(card);
+  });
+}
+
+function renderCca(){
+  ccaWarn();
+  renderCcaYearBar();
+  const res=currentCca();
+  renderCcaSummary(res);
+  renderCcaAssets();
+  renderCcaSchedule(res);
+  const blurb=document.getElementById('cca-export-blurb');
+  if(blurb)setText(blurb,'Area A columns for '+ccaYear+
+    ' in the order the form uses, one row per class, with the summary lines beneath.');
+  const host=document.getElementById('cca-export-btns');
+  if(host){
+    host.innerHTML='';
+    const btn=document.createElement('button');
+    btn.className='btn-export';
+    btn.style.cssText='background:transparent;border-color:#8e6fb0;color:#c3a8e0';
+    setText(btn,'⬇ CCA Schedule · '+ccaYear);
+    btn.addEventListener('click',exportCcaCSV);
+    host.appendChild(btn);
+  }
+}
+
+/* ── CSV: T776 Area A, laid out the way the form reads ───────────── */
+function exportCcaCSV(){
+  const res=currentCca();
+  if(!res.pools.length){showToast('Nothing to export for '+ccaYear);return;}
+  const rows=[];
+  rows.push(['PropLedger — Capital Cost Allowance','Tax year',String(ccaYear)]);
+  rows.push([]);
+  rows.push(['AREA A — CALCULATION OF CCA CLAIM']);
+  rows.push(['Property','Class','Description','Separate class',
+    '2 Opening UCC','3 Cost of additions','5 Proceeds of dispositions',
+    '6 UCC after additions/dispositions','8 AccII adjustment','9 Half-year adjustment',
+    '10 Base amount for CCA','11 Rate %','12 CCA for the year','13 Closing UCC',
+    'Recapture (9947)','Terminal loss (9948)','CCA claimed?']);
+  res.pools.forEach(d=>{
+    const b=getBuildings().find(x=>x.id===d.building);
+    rows.push([
+      b?b.label:'Building '+d.building, d.cls, d.description,
+      d.separate?'Yes':'No',
+      d.opening.toFixed(2), d.additions.toFixed(2), d.dispCredit.toFixed(2),
+      d.uccAfter.toFixed(2),
+      (d.adj>0?d.adj.toFixed(2):''), (d.adj<0?d.adj.toFixed(2):''),
+      d.base.toFixed(2), d.rate.toFixed(2), d.cca.toFixed(2), d.closing.toFixed(2),
+      d.recapture?d.recapture.toFixed(2):'', d.terminalLoss?d.terminalLoss.toFixed(2):'',
+      d.declined?'No — owner declined':'Yes']);
+  });
+  rows.push([]);
+  rows.push(['SUMMARY FOR T776']);
+  rows.push(['Line 9936 — Capital cost allowance', res.totalCCA.toFixed(2)]);
+  rows.push(['Line 9947 — Recapture of CCA', res.totalRecapture.toFixed(2)]);
+  rows.push(['Line 9948 — Terminal loss', res.totalTerminal.toFixed(2)]);
+  rows.push([]);
+  rows.push(['WORKINGS']);
+  rows.push(['Net rental income before CCA', (res.netBefore||0).toFixed(2)]);
+  rows.push(['Maximum CCA available', (res.uncapped||0).toFixed(2)]);
+  rows.push(['Claim restricted by the rental-loss rule', res.capApplied?'Yes':'No']);
+  rows.push([]);
+  rows.push(['NOTES']);
+  rows.push(['CCA cannot create or increase a rental loss; any excess stays in the pool.']);
+  rows.push(['Land is excluded from the depreciable cost of every asset below.']);
+  rows.push(['Each rental building costing $50,000 or more is in its own class.']);
+  rows.push(['Property available for use in 2024-2027 has the half-year rule suspended (AccII phase-out).']);
+  rows.push(['Prepared from owner records. Please review before filing.']);
+  rows.push([]);
+  rows.push(['ASSET DETAIL']);
+  rows.push(['Property','Class','Description','Available for use','Total cost','Land',
+    'Rented share %','Depreciable cost','Rate %','Disposed','Proceeds','Claiming?']);
+  ccaAssets().filter(a=>yearOf(a.acquired)<=ccaYear)
+    .sort((a,b)=>String(a.acquired).localeCompare(b.acquired)).forEach(a=>{
+    const b=getBuildings().find(x=>x.id===a.building);
+    rows.push([b?b.label:'Building '+a.building, a.cls, a.description||'',
+      a.acquired, Number(a.cost).toFixed(2), Number(a.landCost||0).toFixed(2),
+      String(a.businessPct==null?100:a.businessPct), depreciableCost(a).toFixed(2),
+      String(assetRate(a)), a.disposedDate||'', a.proceeds==null?'':Number(a.proceeds).toFixed(2),
+      a.claim===false?'No':'Yes']);
+  });
+
+  const csv=rows.map(r=>r.map(csvCell).join(',')).join('\r\n');
+  const blob=new Blob(['﻿'+csv],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  a.href=url;a.download='cca_schedule_'+ccaYear+'.csv';
+  document.body.appendChild(a);a.click();
+  setTimeout(()=>{document.body.removeChild(a);URL.revokeObjectURL(url);},100);
+  showToast('CCA schedule exported');
+}
+
+/* ── asset modal ─────────────────────────────────────────────────── */
+function fillCcaClassSelect(sel,selected){
+  if(!sel)return;
+  sel.innerHTML='';
+  CCA_CLASSES.forEach(c=>{
+    const o=document.createElement('option');
+    o.value=c.cls;o.textContent=c.label;
+    if(selected===c.cls)o.selected=true;
+    sel.appendChild(o);
+  });
+}
+function ccaClassHint(){
+  const cls=document.getElementById('cca-cls').value;
+  const ci=CCA_CLASSES.find(x=>x.cls===cls);
+  setText(document.getElementById('cca-cls-hint'), ci?ci.hint:'');
+  // Buildings default to not claiming, because of recapture on sale
+  if(ccaEditId===null){
+    const isBuilding=(cls==='1'||cls==='1-PBR'||cls==='3');
+    document.getElementById('cca-claim').value=isBuilding?'no':'yes';
+  }
+}
+function openCcaModal(id){
+  ccaEditId=id==null?null:id;
+  const a=id==null?null:ccaAssets().find(x=>x.id===id);
+  setText(document.getElementById('cca-modal-title'), a?'Edit Capital Asset':'Add Capital Asset');
+  const bs=document.getElementById('cca-bld');bs.innerHTML='';
+  getBuildings().forEach(b=>{
+    const o=document.createElement('option');o.value=String(b.id);o.textContent=b.label;
+    if(a&&b.id===a.building)o.selected=true;bs.appendChild(o);
+  });
+  fillCcaClassSelect(document.getElementById('cca-cls'), a?a.cls:'8');
+  document.getElementById('cca-desc').value=a?(a.description||''):'';
+  document.getElementById('cca-cost').value=a?a.cost:'';
+  document.getElementById('cca-land').value=a?(a.landCost||0):'';
+  document.getElementById('cca-acquired').value=a?a.acquired:today();
+  document.getElementById('cca-pct').value=a?(a.businessPct==null?100:a.businessPct):100;
+  document.getElementById('cca-rate').value=(a&&a.rateOverride!=null)?a.rateOverride:'';
+  document.getElementById('cca-disp-date').value=a?(a.disposedDate||''):'';
+  document.getElementById('cca-proceeds').value=(a&&a.proceeds!=null)?a.proceeds:'';
+  ['err-cca-desc','err-cca-cost','err-cca-acquired'].forEach(i=>{
+    const e=document.getElementById(i);if(e)e.style.display='none';});
+  document.getElementById('cca-delete-btn').style.display=a?'block':'none';
+  if(a)document.getElementById('cca-claim').value=a.claim===false?'no':'yes';
+  else ccaClassHint();
+  if(a)setText(document.getElementById('cca-cls-hint'),
+    (CCA_CLASSES.find(x=>x.cls===a.cls)||{hint:''}).hint);
+  document.getElementById('cca-modal').classList.add('open');
+}
+function closeCcaModal(){
+  ccaEditId=null;
+  document.getElementById('cca-modal').classList.remove('open');
+}
+
+document.getElementById('cca-cls').addEventListener('change',ccaClassHint);
+document.getElementById('cca-add-btn').addEventListener('click',()=>openCcaModal(null));
+document.getElementById('cca-cancel-btn').addEventListener('click',closeCcaModal);
+document.getElementById('cca-modal').addEventListener('click',function(e){
+  if(e.target===this)closeCcaModal();
+});
+document.getElementById('cca-save-btn').addEventListener('click',async()=>{
+  const bld=parseInt(document.getElementById('cca-bld').value,10);
+  const cls=document.getElementById('cca-cls').value;
+  const desc=sanitise(document.getElementById('cca-desc').value,120);
+  const cost=parseFloat(document.getElementById('cca-cost').value);
+  const land=parseFloat(document.getElementById('cca-land').value)||0;
+  const acq=document.getElementById('cca-acquired').value;
+  const pct=parseFloat(document.getElementById('cca-pct').value);
+  const rateRaw=document.getElementById('cca-rate').value;
+  const dispDate=document.getElementById('cca-disp-date').value;
+  const proceedsRaw=document.getElementById('cca-proceeds').value;
+  const bad=(id,s)=>{const e=document.getElementById(id);if(e)e.style.display=s?'block':'none';};
+  let good=true;
+  if(!desc){bad('err-cca-desc',1);good=false;}else bad('err-cca-desc',0);
+  if(!(Number.isFinite(cost)&&cost>0)){bad('err-cca-cost',1);good=false;}else bad('err-cca-cost',0);
+  if(!validDate(acq)){bad('err-cca-acquired',1);good=false;}else bad('err-cca-acquired',0);
+  if(!validBuildingId(bld)){showToast('Invalid property');good=false;}
+  if(land>=cost&&land>0){showToast('Land cannot be the whole cost');good=false;}
+  if(!good)return;
+
+  const asset={id:ccaEditId!=null?ccaEditId:Date.now(),building:bld,cls,description:desc,
+    cost:Math.round(cost*100)/100, landCost:Math.round(land*100)/100,
+    acquired:acq,
+    businessPct:(Number.isFinite(pct)&&pct>0&&pct<=100)?pct:100,
+    rateOverride:(rateRaw===''||!Number.isFinite(parseFloat(rateRaw)))?null:parseFloat(rateRaw),
+    claim:document.getElementById('cca-claim').value!=='no',
+    disposedDate:validDate(dispDate)?dispDate:null,
+    proceeds:(proceedsRaw===''||!Number.isFinite(parseFloat(proceedsRaw)))?null:parseFloat(proceedsRaw)};
+
+  const list=ccaAssets().filter(x=>x.id!==asset.id);
+  list.push(asset);
+  if(ccaCache&&!ccaTableMissing)ccaCache=list;
+  cacheCcaLocally(list);
+  const btn=document.getElementById('cca-save-btn');
+  btn.textContent='Saving…';btn.disabled=true;
+  closeCcaModal();
+  const synced=await pushCcaAsset(asset);
+  btn.textContent='Save';btn.disabled=false;
+  if(!synced&&!ccaTableMissing)showToast('⚠ Saved on this device only');
+  renderCca();
+  showToast('✓ Asset saved');
+});
+document.getElementById('cca-delete-btn').addEventListener('click',async()=>{
+  if(ccaEditId==null)return;
+  const id=ccaEditId;
+  const list=ccaAssets().filter(x=>x.id!==id);
+  if(ccaCache&&!ccaTableMissing)ccaCache=list;
+  cacheCcaLocally(list);
+  closeCcaModal();
+  await removeCcaAssetRemote(id);
+  renderCca();
+  showToast('Asset removed');
+});
+
+/* ── wiring ──────────────────────────────────────────────────────── */
+document.getElementById('cca-sql-box').textContent=CCA_SQL;
+document.getElementById('copy-cca-sql-btn').addEventListener('click',function(){
+  const b=this;
+  navigator.clipboard.writeText(CCA_SQL).then(()=>{
+    setText(b,'Copied!');setTimeout(()=>setText(b,'Copy SQL'),1800);
+  }).catch(()=>{});
+});
+document.getElementById('cca-recheck-btn').addEventListener('click',async function(){
+  const b=this; setText(b,'Checking…'); b.disabled=true;
+  await loadCcaFromSupabase();
+  b.disabled=false; setText(b,'Check again');
+  renderCca();
+  showToast(ccaTableMissing
+    ? '⚠ Still not found — check the SQL ran without error'
+    : '✓ Capital assets now syncing');
+  if(!ccaTableMissing)subscribeCcaRealtime();
+});
+document.getElementById('tab-cca').addEventListener('click',()=>{
+  showTab('cca');
+  renderCca();
+  if(ccaTableMissing&&sbClient){
+    loadCcaFromSupabase().then(()=>{
+      renderCca();
+      if(!ccaTableMissing)subscribeCcaRealtime();
+    });
+  }
+});
+(function waitForCca(tries){
+  if(typeof sbClient!=='undefined'&&sbClient){
+    loadCcaFromSupabase().then(subscribeCcaRealtime);
+    return;
+  }
+  if(tries>0)setTimeout(()=>waitForCca(tries-1),400);
+})(40);
 </script>
 
 </body>
