@@ -1829,20 +1829,42 @@ function exportCSV(bld){
   const data=bld?scoped.filter(e=>e.building===bld):scoped;
   if(!data.length){showToast('Nothing to export for '+sumYear);return;}
   const depIds=(typeof window.ccaDepreciatedIds==='function')?window.ccaDepreciatedIds():new Set();
-  const rows=[['Date','Building','Category','Group','Amount','Description','Notes','Has Receipt','Deductible this year']];
+  // The stored file name, so a bulk-downloaded bucket can be matched back
+  // to these rows. Receipts are saved as <entry id>.jpg or .pdf.
+  const receiptFile=e=>{
+    if(!e.receipt)return '';
+    const seg=String(e.receipt).split('?')[0].split('/').pop();
+    return seg||(e.id+'.jpg');
+  };
+  const rows=[['Entry ID','Date','Building','Category','Group','Amount','Description','Notes',
+               'Has Receipt','Receipt File','Receipt Link','Deductible this year']];
   data.forEach(e=>{
     const bInfo=BUILDINGS.find(b=>b.id===e.building);
-    rows.push([e.date,bInfo?bInfo.label:'Building '+e.building,e.category,e.group,e.amount.toFixed(2),
-      e.description||'',e.notes||'',e.receipt?'Yes':'No',
+    rows.push([String(e.id),e.date,bInfo?bInfo.label:'Building '+e.building,e.category,e.group,
+      e.amount.toFixed(2),e.description||'',e.notes||'',
+      e.receipt?'Yes':'No',receiptFile(e),e.receipt||'',
       depIds.has(e.id)?'No — capital, see CCA schedule':'Yes']);
   });
   // Totals so the accountant does not have to add the column up
   const dedTotal=data.filter(e=>!depIds.has(e.id)).reduce((s,e)=>s+e.amount,0);
   const capTotal=data.filter(e=>depIds.has(e.id)).reduce((s,e)=>s+e.amount,0);
   rows.push([]);
-  rows.push(['','','','TOTAL DEDUCTIBLE',dedTotal.toFixed(2),'','','','']);
+  rows.push(['','','','','TOTAL DEDUCTIBLE',dedTotal.toFixed(2)]);
   if(capTotal>0)
-    rows.push(['','','','CAPITAL — depreciated via CCA',capTotal.toFixed(2),'','','','']);
+    rows.push(['','','','','CAPITAL — depreciated via CCA',capTotal.toFixed(2)]);
+
+  // Make the file self-sufficient: say where the receipt images actually live
+  const withRec=data.filter(e=>e.receipt).length;
+  const noRec=data.length-withRec;
+  rows.push([]);
+  rows.push(['RECEIPTS']);
+  rows.push([withRec+' of '+data.length+' entries have a receipt attached'+
+    (noRec>0?'; '+noRec+' do not':'')+'.']);
+  rows.push(['Receipt Link opens the image directly. Each file is named by its Entry ID, '+
+    'so a bulk download can be matched back to these rows.']);
+  rows.push(['To download them all: Supabase dashboard \u2192 Storage \u2192 receipts bucket.']);
+  rows.push(['These links are live. Anyone holding this file can open the images, '+
+    'so share it the way you would share the receipts themselves.']);
   const csv=rows.map(r=>r.map(csvCell).join(',')).join('\r\n');
   const blob=new Blob(['\uFEFF'+csv],{type:'text/csv;charset=utf-8'});
   const url=URL.createObjectURL(blob);
@@ -2814,7 +2836,7 @@ if(document.readyState==='loading'){
   const swCode=`
 // The cache name carries a build stamp, so a new upload retires the old
 // cache instead of serving it forever.
-const CACHE='propledger-96aa27dcbf';
+const CACHE='propledger-f6abe60efb';
 const URLS=[
   self.location.href,
   'https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap',
