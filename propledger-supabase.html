@@ -855,6 +855,23 @@
         <option value="semi">Semi-annually (Canadian lender convention)</option>
       </select>
     </div>
+    <div class="form-row">
+      <label>How The Property Is Used</label>
+      <select id="mort-use">
+        <option value="rental">Rental property — fully rented</option>
+        <option value="primary">Primary residence with a rental unit</option>
+      </select>
+    </div>
+    <div class="form-row" id="mort-pct-row" style="display:none">
+      <label>Rented Portion (% of floor area)</label>
+      <input type="number" id="mort-pct" step="0.1" min="1" max="100" inputmode="decimal" placeholder="e.g. 35">
+      <div class="field-error" id="err-mort-pct">Enter a share between 1 and 100</div>
+      <div style="font-size:.68rem;color:var(--mid);margin-top:4px;line-height:1.55">
+        The share of the floor area you rent out — the basement, say. Only that
+        portion of the mortgage interest is deductible. Floor area is the usual
+        basis; room count also works when the rooms are similar in size.
+      </div>
+    </div>
     <div id="mort-preview" style="font-size:.78rem;background:var(--paper);border:1px solid var(--border);border-radius:8px;padding:11px 13px;line-height:1.6;color:var(--ink)"></div>
     <div class="modal-actions">
       <button class="modal-btn primary" id="mort-save-btn">Save &amp; Activate</button>
@@ -2836,7 +2853,7 @@ if(document.readyState==='loading'){
   const swCode=`
 // The cache name carries a build stamp, so a new upload retires the old
 // cache instead of serving it forever.
-const CACHE='propledger-f6abe60efb';
+const CACHE='propledger-6a6b3c41b5';
 const URLS=[
   self.location.href,
   'https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:wght@300;400;500;600&display=swap',
@@ -3240,8 +3257,13 @@ create table if not exists mortgages (
   start_date  date          not null,
   comp        text          not null default 'monthly',
   active      boolean       not null default true,
+  is_primary  boolean       not null default false,
+  rented_pct  numeric(5,2)  not null default 100,
   updated_at  timestamptz   default now()
 );
+-- Safe to re-run on a table created before these columns existed
+alter table mortgages add column if not exists is_primary boolean not null default false;
+alter table mortgages add column if not exists rented_pct numeric(5,2) not null default 100;
 alter table mortgages enable row level security;
 drop policy if exists "allow all" on mortgages;
 create policy "allow all" on mortgages for all using (true) with check (true);
@@ -3341,7 +3363,9 @@ async function loadMortgagesFromSupabase(){
     (data||[]).forEach(r=>{
       m[String(r.building)]={active:!!r.active,amount:parseFloat(r.amount),
         rate:parseFloat(r.rate),years:parseFloat(r.years),
-        start:r.start_date,comp:r.comp||'monthly'};
+        start:r.start_date,comp:r.comp||'monthly',
+        isPrimary:!!r.is_primary,
+        rentedPct:r.rented_pct==null?100:parseFloat(r.rented_pct)};
     });
     // First run against a fresh table: lift anything already set up on this
     // device so nothing is lost, then it is shared from then on.
@@ -3363,6 +3387,7 @@ async function pushMortgage(bid,cfg){
     const {error}=await sbClient.from('mortgages').upsert({
       building:bid,amount:cfg.amount,rate:cfg.rate,years:cfg.years,
       start_date:cfg.start,comp:cfg.comp||'monthly',active:!!cfg.active,
+      is_primary:!!cfg.isPrimary,rented_pct:mortRentedPct(cfg),
       updated_at:new Date().toISOString()});
     return !error;
   }catch{ return false; }
@@ -3389,6 +3414,21 @@ function mortgageFor(bid){ const m=loadMortgages(); return m[String(bid)]||null;
 // Canadian fixed mortgages compound semi-annually, not monthly. Using j/12
 // overstates the interest, so the periodic rate is converted:
 //   i = (1 + j/2)^(2/12) - 1
+// When you live in the property and rent out part of it, only the rented
+// share of the mortgage is a rental cost. CRA accepts floor area as the
+// basis (number of rooms also works when rooms are similar in size).
+// The amortisation maths stays untouched — the loan is the loan — and the
+// split is applied only where money reaches the books.
+function mortRentedPct(cfg){
+  if(!cfg||!cfg.isPrimary)return 100;
+  const p=Number(cfg.rentedPct);
+  return (Number.isFinite(p)&&p>0&&p<=100)?p:100;
+}
+function mortShare(cfg,amount){
+  return Math.round((Number(amount)||0)*mortRentedPct(cfg))/100;
+}
+function mortIsProrated(cfg){ return mortRentedPct(cfg)<100; }
+
 function mortPeriodicRate(cfg){
   const j=(Number(cfg.rate)||0)/100;
   if(j<=0)return 0;
@@ -3448,7 +3488,7 @@ async function autoPostMortgages(year){
   if(!sbClient)return 0;
   const conf=loadMortgages();
   const now=new Date(), cy=now.getFullYear(), cm=now.getMonth();
-  let posted=0;
+  let posted=0, corrected=0;
   for(const key of Object.keys(conf)){
     const bid=parseInt(key,10);
     const cfg=conf[key];
@@ -3460,13 +3500,36 @@ async function autoPostMortgages(year){
       const split=mortSplitAt(cfg,k);
       if(!split||split.interest<=0)continue; // past the end, or paid off
       const id=mortRowId(bid,year,m);
-      if(expenses.some(e=>e.id===id))continue;
+      const pct=mortRentedPct(cfg);
+      // Only the rented share of the interest is a deductible expense
+      const claimable=mortShare(cfg,split.interest);
+      const note='Payment '+fmt(split.payment)+' = interest '+fmt(split.interest)+
+            ' + principal '+fmt(split.principal)+
+            '. Balance after: '+fmt(split.balanceAfter)+'.'+
+            (pct<100
+              ? ' Primary residence: '+pct+'% rented, so '+fmt(claimable)+
+                ' of the '+fmt(split.interest)+' interest is deductible.'
+              : '');
+
+      const existing=expenses.find(e=>e.id===id);
+      if(existing){
+        // The rented share can change after the fact. Correct what was
+        // already posted rather than leaving it at the old figure.
+        if(Math.abs(existing.amount-claimable)<=0.005)continue;
+        try{
+          const {error}=await sbClient.from('expenses')
+            .update({amount:claimable,notes:note}).eq('id',id);
+          if(error)continue;
+          existing.amount=claimable; existing.notes=note;
+          corrected++;
+        }catch{}
+        continue;
+      }
+
       const row={id,building:bid,category:'Mortgage Interest',grp:'Finance',
-        amount:split.interest,date:mortDateFor(cfg,year,m),
+        amount:claimable,date:mortDateFor(cfg,year,m),
         description:'Mortgage interest \u2014 auto',
-        notes:'Payment '+fmt(split.payment)+' = interest '+fmt(split.interest)+
-              ' + principal '+fmt(split.principal)+
-              '. Balance after: '+fmt(split.balanceAfter)+'.',
+        notes:note,
         receipt_url:null};
       try{
         const {error}=await sbClient.from('expenses').insert(row);
@@ -3481,11 +3544,15 @@ async function autoPostMortgages(year){
       }catch{}
     }
   }
-  if(posted){
+  if(posted||corrected){
     renderExpenses(); renderSummary(); buildCatFilter();
-    showToast('\u2713 Posted '+posted+' mortgage interest entr'+(posted===1?'y':'ies'));
+    if(posted)
+      showToast('\u2713 Posted '+posted+' mortgage interest entr'+(posted===1?'y':'ies'));
+    else
+      showToast('\u2713 Updated '+corrected+' mortgage entr'+(corrected===1?'y':'ies')+
+                ' to the new rented share');
   }
-  return posted;
+  return posted+corrected;
 }
 
 /* ── the full amortisation schedule ───────────────────────────────── */
@@ -3599,7 +3666,11 @@ function renderMortgageSchedule(){
   legend.style.cssText='font-size:.72rem;color:var(--mid);line-height:1.6;padding:2px 2px 0';
   legend.innerHTML='Interest is shown in <span style="color:var(--rust)">red</span>, '+
     'principal in <span style="color:var(--sage)">green</span>. The current month is '+
-    'highlighted. Only the interest column is treated as a deductible expense.';
+    'highlighted. Only the interest column is treated as a deductible expense.'+
+    (mortIsProrated(cfg)
+      ? ' <strong>This is the whole loan.</strong> Because you live here, '+
+        mortRentedPct(cfg)+'% of each interest figure is what reaches your expenses.'
+      : '');
   host.appendChild(legend);
 }
 
@@ -3623,6 +3694,14 @@ function renderMortgagePanel(){
     hdr.className='bsc-header';hdr.style.background=b.color;
     const t=document.createElement('div');t.className='bsc-title';
     setText(t,b.icon+' '+b.label);
+    if(cfg&&cfg.active&&mortIsProrated(cfg)){
+      const f=document.createElement('span');
+      f.style.cssText='display:inline-block;margin-left:8px;padding:1px 7px;border-radius:4px;'+
+        'background:rgba(255,255,255,.22);font-size:.6rem;font-weight:600;'+
+        'letter-spacing:.04em;text-transform:uppercase;vertical-align:middle';
+      setText(f,mortRentedPct(cfg)+'% rented');
+      t.appendChild(f);
+    }
     const v=document.createElement('div');v.className='bsc-total';v.style.color='#fff';
     hdr.append(t,v);card.appendChild(hdr);
 
@@ -3650,8 +3729,17 @@ function renderMortgagePanel(){
           setText(av,fmt(val));
           r.append(nd,av);return r;
         };
-        card.appendChild(line('Interest this month',split.interest,'posted as an expense'));
-        card.appendChild(line('Principal this month',split.principal,'not deductible'));
+        if(mortIsProrated(cfg)){
+          // Show the whole figure and the rented share, so the proration is
+          // visible rather than a number that quietly does not add up.
+          card.appendChild(line('Interest this month',split.interest,'full amount'));
+          card.appendChild(line('Deductible at '+mortRentedPct(cfg)+'%',
+            mortShare(cfg,split.interest),'posted as an expense'));
+          card.appendChild(line('Principal this month',split.principal,'full amount'));
+        }else{
+          card.appendChild(line('Interest this month',split.interest,'posted as an expense'));
+          card.appendChild(line('Principal this month',split.principal,'not deductible'));
+        }
         card.appendChild(line('Balance remaining',split.balanceAfter,
           'payment '+(k+1)+' of '+Math.round(cfg.years*12)));
       }else{
@@ -3676,9 +3764,18 @@ function renderMortgagePanel(){
   const note=document.createElement('div');
   note.className='chart-note';
   note.style.cssText='font-size:.72rem;color:var(--mid);line-height:1.6;padding:4px 2px 0';
+  const anyProrated=getBuildings().some(b=>{
+    const m=conf[String(b.id)]; return m&&m.active&&mortIsProrated(m);
+  });
   note.innerHTML='Interest is posted automatically each month as a <strong>Mortgage Interest</strong> '+
     'expense, and appears on the Expenses and Summary tabs. Principal is shown here but not posted \u2014 '+
     'repaying capital is not a deductible expense.'+
+    (anyProrated
+      ? ' On a property you live in, only the rented share of the interest is posted. '+
+        '<strong>The same share applies to every other cost you share with the rented unit</strong> '+
+        '\u2014 property taxes, insurance, heating, water \u2014 so enter those at the rented '+
+        'portion too. Costs that belong only to the rented unit stay at 100%.'
+      : '')+
     (mortTableMissing
       ? ' <strong>Terms are stored on this device only</strong> \u2014 run the SQL above to share them.'
       : ' Terms are shared across your devices.');
@@ -3694,6 +3791,8 @@ function mortPreview(){
     years:parseFloat(document.getElementById('mort-years').value)||0,
     comp:document.getElementById('mort-comp').value==='semi'?'semi':'monthly',
     start:document.getElementById('mort-start').value,
+    isPrimary:document.getElementById('mort-use').value==='primary',
+    rentedPct:parseFloat(document.getElementById('mort-pct').value),
   };
   if(!(cfg.amount>0&&cfg.rate>=0&&cfg.years>0)){
     setText(el,'Fill in the amount, rate and term to see the monthly split.');
@@ -3713,7 +3812,14 @@ function mortPreview(){
     el.appendChild(l2);
     const l3=document.createElement('div');
     l3.style.cssText='color:var(--mid);margin-top:3px';
-    setText(l3,'Only the interest is recorded as an expense.');
+    if(mortIsProrated(cfg)){
+      setText(l3,'Primary residence at '+mortRentedPct(cfg)+'% rented: '+
+        fmt(mortShare(cfg,first.interest))+' of that interest is deductible.');
+      l3.style.color='var(--ink)';
+      l3.style.fontWeight='600';
+    }else{
+      setText(l3,'Only the interest is recorded as an expense.');
+    }
     el.appendChild(l3);
   }
 }
@@ -3730,7 +3836,11 @@ function openMortgageModal(bid){
   document.getElementById('mort-years').value=cfg?cfg.years:'';
   document.getElementById('mort-start').value=cfg?cfg.start:'';
   document.getElementById('mort-comp').value=cfg&&cfg.comp==='semi'?'semi':'monthly';
-  ['err-mort-amount','err-mort-rate','err-mort-years','err-mort-start']
+  document.getElementById('mort-use').value=(cfg&&cfg.isPrimary)?'primary':'rental';
+  document.getElementById('mort-pct').value=
+    (cfg&&cfg.isPrimary&&cfg.rentedPct!=null)?cfg.rentedPct:'';
+  mortUseToggle();
+  ['err-mort-amount','err-mort-rate','err-mort-years','err-mort-start','err-mort-pct']
     .forEach(id=>{const e=document.getElementById(id);if(e)e.style.display='none';});
   document.getElementById('mort-remove-btn').style.display=
     (cfg&&cfg.active)?'block':'none';
@@ -3745,6 +3855,13 @@ function closeMortgageModal(){
 ['mort-amount','mort-rate','mort-years','mort-start'].forEach(id=>{
   document.getElementById(id).addEventListener('input',mortPreview);
 });
+function mortUseToggle(){
+  const primary=document.getElementById('mort-use').value==='primary';
+  document.getElementById('mort-pct-row').style.display=primary?'block':'none';
+  mortPreview();
+}
+document.getElementById('mort-use').addEventListener('change',mortUseToggle);
+document.getElementById('mort-pct').addEventListener('input',mortPreview);
 document.getElementById('mort-comp').addEventListener('change',mortPreview);
 document.getElementById('mort-cancel-btn').addEventListener('click',closeMortgageModal);
 document.getElementById('mortgage-modal').addEventListener('click',function(e){
@@ -3758,15 +3875,20 @@ document.getElementById('mort-save-btn').addEventListener('click',async()=>{
   const years=parseFloat(document.getElementById('mort-years').value);
   const start=document.getElementById('mort-start').value;
   const comp=document.getElementById('mort-comp').value==='semi'?'semi':'monthly';
+  const isPrimary=document.getElementById('mort-use').value==='primary';
+  const pct=parseFloat(document.getElementById('mort-pct').value);
   const bad=(id,show)=>{const e=document.getElementById(id);if(e)e.style.display=show?'block':'none';};
   let ok=true;
   if(!(Number.isFinite(amount)&&amount>0&&amount<=99999999)){bad('err-mort-amount',1);ok=false;}else bad('err-mort-amount',0);
   if(!(Number.isFinite(rate)&&rate>=0&&rate<=25)){bad('err-mort-rate',1);ok=false;}else bad('err-mort-rate',0);
   if(!(Number.isFinite(years)&&years>=1&&years<=40)){bad('err-mort-years',1);ok=false;}else bad('err-mort-years',0);
   if(!validDate(start)){bad('err-mort-start',1);ok=false;}else bad('err-mort-start',0);
+  if(isPrimary&&!(Number.isFinite(pct)&&pct>0&&pct<=100)){bad('err-mort-pct',1);ok=false;}
+  else bad('err-mort-pct',0);
   if(!ok)return;
 
-  const cfg={active:true,amount:Math.round(amount*100)/100,rate,years,start,comp};
+  const cfg={active:true,amount:Math.round(amount*100)/100,rate,years,start,comp,
+    isPrimary, rentedPct:isPrimary?pct:100};
   const conf=loadMortgages();
   conf[String(mortEditBid)]=cfg;
   saveMortgages(conf);
@@ -3815,7 +3937,9 @@ function principalByBuilding(year){
       const s=mortSplitAt(cfg,k);
       if(s)tot+=s.principal;
     }
-    out[bid]=(out[bid]||0)+Math.round(tot*100)/100;
+    // Prorated like the interest: on a part-rented home only the rented
+    // share of the payment belongs to the rental side of the books.
+    out[bid]=(out[bid]||0)+mortShare(cfg,tot);
   });
   return out;
 }
